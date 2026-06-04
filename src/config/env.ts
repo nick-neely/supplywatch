@@ -7,9 +7,14 @@ const booleanFromString = z
   .default("true")
   .transform((value) => value.toLowerCase() === "true");
 
+type PositiveIntegerOptions = {
+  minimum?: number;
+  name?: string;
+};
+
 const positiveIntegerFromString = (
   defaultValue: number,
-  options: { minimum?: number; name?: string } = {},
+  options: PositiveIntegerOptions = {},
 ) =>
   z
     .string()
@@ -30,7 +35,7 @@ const positiveIntegerFromString = (
     })
     .pipe(
       z.number().superRefine((value, context) => {
-        if (options.minimum && value < options.minimum) {
+        if (options.minimum !== undefined && value < options.minimum) {
           context.addIssue({
             code: "custom",
             message: `${options.name ?? "value"} must be at least ${options.minimum}`,

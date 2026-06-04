@@ -35,6 +35,8 @@ import {
 } from "./state/diff.js";
 import type { EventRecord } from "./state/repository.js";
 
+type CliConfig = ReturnType<typeof loadConfig>;
+
 interface CliDependencies {
   capture: (options: CaptureProductStateFixtureOptions) => Promise<{
     directory: string;
@@ -62,6 +64,15 @@ type DebugArtifact = {
   inspection: DetailInspectionResult | null;
   errorMessage: string | null;
   capturedAt: string;
+};
+
+type HealthEventInput = {
+  eventType: string;
+  observedAt: string;
+  title: string;
+  description: string;
+  scope: string;
+  productId?: string;
 };
 
 const defaultDependencies: CliDependencies = {
@@ -170,15 +181,13 @@ async function runPollCycle(
     const diffs: ProductSnapshotDiffResult[] = [];
 
     if (discovery.products.length === 0) {
-      state.repository.recordEvent(
-        buildHealthEvent({
-          eventType: "health_zero_product_run",
-          observedAt,
-          title: "Supplywatch zero-product run",
-          description: "Rendered page returned no products.",
-          scope: "discovery",
-        }),
-      );
+      recordHealthEvent(state.repository, {
+        eventType: "health_zero_product_run",
+        observedAt,
+        title: "Supplywatch zero-product run",
+        description: "Rendered page returned no products.",
+        scope: "discovery",
+      });
     }
 
     for (const product of discovery.products) {
@@ -210,32 +219,28 @@ async function runPollCycle(
         inspections.set(product.stableId, inspection);
 
         if (inspection.confidence === "low") {
-          state.repository.recordEvent(
-            buildHealthEvent({
-              eventType: "health_low_confidence_classification",
-              observedAt,
-              title: "Supplywatch low-confidence classification",
-              description:
-                "Product detail inspection completed with low confidence.",
-              scope: "detail-inspection",
-              productId: product.stableId,
-            }),
-          );
+          recordHealthEvent(state.repository, {
+            eventType: "health_low_confidence_classification",
+            observedAt,
+            title: "Supplywatch low-confidence classification",
+            description:
+              "Product detail inspection completed with low confidence.",
+            scope: "detail-inspection",
+            productId: product.stableId,
+          });
         }
       }
 
       if (!product.name || !product.imageUrl) {
-        state.repository.recordEvent(
-          buildHealthEvent({
-            eventType: "health_missing_product_identity",
-            observedAt,
-            title: "Supplywatch missing product identity",
-            description:
-              "A rendered product card is missing a product name or image.",
-            scope: "discovery",
-            productId: product.stableId,
-          }),
-        );
+        recordHealthEvent(state.repository, {
+          eventType: "health_missing_product_identity",
+          observedAt,
+          title: "Supplywatch missing product identity",
+          description:
+            "A rendered product card is missing a product name or image.",
+          scope: "discovery",
+          productId: product.stableId,
+        });
       }
 
       diffs.push(diff);
@@ -261,20 +266,20 @@ async function runPollCycle(
     });
   } catch (error) {
     const finishedAt = dependencies.now().toISOString();
-    state.repository.recordEvent(
-      buildHealthEvent({
-        eventType: "health_poll_failed",
-        observedAt: finishedAt,
-        title: "Supplywatch poll failed",
-        description: error instanceof Error ? error.message : String(error),
-        scope: "poll",
-      }),
-    );
+    const errorMessage = errorMessageFromUnknown(error);
+
+    recordHealthEvent(state.repository, {
+      eventType: "health_poll_failed",
+      observedAt: finishedAt,
+      title: "Supplywatch poll failed",
+      description: errorMessage,
+      scope: "poll",
+    });
     state.repository.finishRun(run.id, {
       finishedAt,
       status: "failed",
       productCount: 0,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorMessage,
     });
     throw error;
   } finally {
@@ -282,14 +287,14 @@ async function runPollCycle(
   }
 }
 
-function buildHealthEvent(options: {
-  eventType: string;
-  observedAt: string;
-  title: string;
-  description: string;
-  scope: string;
-  productId?: string;
-}): EventRecord {
+function recordHealthEvent(
+  repository: OpenStateRepository["repository"],
+  options: HealthEventInput,
+): void {
+  repository.recordEvent(buildHealthEvent(options));
+}
+
+function buildHealthEvent(options: HealthEventInput): EventRecord {
   const rateLimitBucket = options.observedAt.slice(0, 13);
 
   return {
@@ -322,44 +327,42 @@ function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-async function runWorker(dependencies: CliDependencies): Promise<void> {
-  const config = dependencies.loadConfig();
-
-  dependencies.log("supplywatch worker starting");
-  dependencies.log(JSON.stringify(redactConfig(config), null, 2));
-
+async function dispatchStartupNotifications(
+  config: CliConfig,
+  dependencies: CliDependencies,
+): Promise<void> {
   const state = dependencies.openStateRepository(config.DATABASE_PATH);
+
   try {
     await dispatchNotificationsForRun(state.repository, config, dependencies);
   } finally {
     state.close();
   }
+}
 
-  let running = false;
+async function runWorker(dependencies: CliDependencies): Promise<void> {
+  const config = dependencies.loadConfig();
+
+  logWorkerStartup(dependencies, config);
+  await dispatchStartupNotifications(config, dependencies);
+
   let lastFullSweepAt = 0;
 
   while (dependencies.shouldContinue()) {
-    if (running) {
-      dependencies.log("poll skipped: previous run still in progress");
-    } else {
-      running = true;
-      const now = dependencies.now().getTime();
-      const fullSweepIntervalMs = config.FULL_SWEEP_INTERVAL_MINUTES * 60_000;
-      const fullSweep =
-        lastFullSweepAt === 0 || now - lastFullSweepAt >= fullSweepIntervalMs;
+    const now = dependencies.now().getTime();
+    const fullSweep = shouldRunFullSweep({
+      now,
+      lastFullSweepAt,
+      intervalMinutes: config.FULL_SWEEP_INTERVAL_MINUTES,
+    });
 
-      try {
-        await runPollCycle(dependencies, { fullSweep });
-        if (fullSweep) {
-          lastFullSweepAt = now;
-        }
-      } catch (error) {
-        dependencies.log(
-          `poll failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      } finally {
-        running = false;
+    try {
+      await runPollCycle(dependencies, { fullSweep });
+      if (fullSweep) {
+        lastFullSweepAt = now;
       }
+    } catch (error) {
+      dependencies.log(`poll failed: ${errorMessageFromUnknown(error)}`);
     }
 
     if (dependencies.shouldContinue()) {
@@ -368,9 +371,22 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
   }
 }
 
+function shouldRunFullSweep(options: {
+  now: number;
+  lastFullSweepAt: number;
+  intervalMinutes: number;
+}): boolean {
+  const fullSweepIntervalMs = options.intervalMinutes * 60_000;
+
+  return (
+    options.lastFullSweepAt === 0 ||
+    options.now - options.lastFullSweepAt >= fullSweepIntervalMs
+  );
+}
+
 async function dispatchNotificationsForRun(
   repository: OpenStateRepository["repository"],
-  config: ReturnType<typeof loadConfig>,
+  config: CliConfig,
   dependencies: Pick<CliDependencies, "sendDiscordWebhook" | "log">,
 ): Promise<NotificationDispatchResult> {
   return dispatchPendingNotifications(repository, {
@@ -380,7 +396,7 @@ async function dispatchNotificationsForRun(
 }
 
 function notificationDispatchOptions(
-  config: ReturnType<typeof loadConfig>,
+  config: CliConfig,
   dependencies: Pick<CliDependencies, "sendDiscordWebhook" | "log">,
 ): Omit<NotificationDispatchOptions, "now"> {
   return {
@@ -471,6 +487,18 @@ function safeFilePart(value: string): string {
   return value.replace(/[^a-z0-9-]+/gi, "-").replace(/^-+|-+$/g, "");
 }
 
+function errorMessageFromUnknown(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function logWorkerStartup(
+  dependencies: Pick<CliDependencies, "log">,
+  config: CliConfig,
+): void {
+  dependencies.log("supplywatch worker starting");
+  dependencies.log(JSON.stringify(redactConfig(config), null, 2));
+}
+
 export async function runCli(
   args: string[],
   dependencyOverrides: Partial<CliDependencies> = {},
@@ -488,15 +516,9 @@ export async function runCli(
 
   if (command === "poll-once") {
     const config = dependencies.loadConfig();
-    dependencies.log("supplywatch worker starting");
-    dependencies.log(JSON.stringify(redactConfig(config), null, 2));
 
-    const state = dependencies.openStateRepository(config.DATABASE_PATH);
-    try {
-      await dispatchNotificationsForRun(state.repository, config, dependencies);
-    } finally {
-      state.close();
-    }
+    logWorkerStartup(dependencies, config);
+    await dispatchStartupNotifications(config, dependencies);
 
     await runPollCycle(dependencies, { fullSweep: false });
     return;
