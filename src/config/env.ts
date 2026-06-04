@@ -50,8 +50,14 @@ const envSchema = z
 
 export type SupplywatchConfig = z.infer<typeof envSchema>;
 
+export function parseConfig(
+  env: Record<string, string | undefined>,
+): SupplywatchConfig {
+  return envSchema.parse(env);
+}
+
 export function loadConfig(): SupplywatchConfig {
-  return envSchema.parse(process.env);
+  return parseConfig(process.env);
 }
 
 export function redactConfig(
