@@ -21,6 +21,7 @@ RUN apt-get update \
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --prod --frozen-lockfile=false
 RUN pnpm exec playwright install --with-deps chromium
+COPY drizzle ./drizzle
 COPY --from=build /app/dist ./dist
 VOLUME ["/app/data"]
 CMD ["node", "dist/worker.js"]

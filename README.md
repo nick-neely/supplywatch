@@ -12,7 +12,7 @@ supplywatch renders the public Supply site with Playwright, watches product card
 - TypeScript
 - Playwright for rendered-page inspection
 - Cheerio as an HTML parsing fallback
-- SQLite via `better-sqlite3`
+- SQLite via `better-sqlite3` with Drizzle state migrations
 - Discord webhooks
 - Docker for deployment
 
@@ -57,6 +57,9 @@ pnpm build
 pnpm start
 pnpm typecheck
 pnpm test
+pnpm db:generate          # generate Drizzle migrations from src/state/tables.ts
+pnpm db:migrate           # apply migrations to DATABASE_PATH
+pnpm db:studio            # inspect DATABASE_PATH with Drizzle Studio
 ```
 
 Fixture capture renders the supplied product/detail URL with Playwright and saves
@@ -64,6 +67,10 @@ Fixture capture renders the supplied product/detail URL with Playwright and save
 Use states such as `out-of-stock`, `purchase-button`, `employee-gated-login`,
 `sized`, `sizeless`, `disabled-size`, `enabled-size`, or
 `animate-wiggle-candidate`.
+
+`DATABASE_PATH` remains the source of truth for the watcher state database. The
+Drizzle config defaults to `./data/supplywatch.sqlite`, matching the app's
+runtime default when the environment variable is not set.
 
 ## Docker
 

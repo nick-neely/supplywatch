@@ -1,5 +1,8 @@
 import type Database from "better-sqlite3";
+import { asc, eq, inArray, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/better-sqlite3";
 import { initializeStateSchema } from "./schema.js";
+import { events, productOverrides, products, runs } from "./tables.js";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -82,177 +85,94 @@ export type ProductOverride = {
   annotation: string | null;
 };
 
-type ProductRow = {
-  stable_id: string;
-  name: string | null;
-  url: string | null;
-  image_url: string | null;
-  description: string | null;
-  collection: string | null;
-  price: string | null;
-  normalized_snapshot_json: string;
-  raw_fingerprint: string | null;
-  buyable_state: BuyableState;
-  available_sizes_json: string;
-  first_seen_at: string;
-  last_seen_at: string;
-  first_public_at: string | null;
-  out_of_stock_confirmations: number;
-  retired_at: string | null;
-  retirement_reason: string | null;
-};
-
-type EventRow = {
-  id: number;
-  event_hash: string;
-  event_type: string;
-  product_id: string | null;
-  payload_json: string;
-  notification_status: NotificationStatus;
-  attempt_count: number;
-  last_attempt_at: string | null;
-  notification_error: string | null;
-  created_at: string;
-  notified_at: string | null;
-};
-
-type RunRow = {
-  id: number;
-  started_at: string;
-  finished_at: string | null;
-  status: RunStatus;
-  product_count: number;
-  error_message: string | null;
-};
-
-type ProductOverrideRow = {
-  product_id: string;
-  denylisted: 0 | 1;
-  force_retired: 0 | 1;
-  force_watched: 0 | 1;
-  known_employee_only: 0 | 1;
-  annotation: string | null;
-};
+type ProductRow = typeof products.$inferSelect;
+type EventRow = typeof events.$inferSelect;
+type RunRow = typeof runs.$inferSelect;
+type ProductOverrideRow = typeof productOverrides.$inferSelect;
 
 export class WatcherStateRepository {
-  readonly #database: Database.Database;
+  readonly #db: ReturnType<typeof drizzle>;
 
   constructor(database: Database.Database) {
-    this.#database = database;
     initializeStateSchema(database);
+    this.#db = drizzle(database);
   }
 
   upsertProduct(product: ProductRecord): void {
-    this.#database
-      .prepare(`
-        INSERT INTO products (
-          stable_id,
-          name,
-          url,
-          image_url,
-          description,
-          collection,
-          price,
-          normalized_snapshot_json,
-          raw_fingerprint,
-          buyable_state,
-          available_sizes_json,
-          first_seen_at,
-          last_seen_at,
-          first_public_at,
-          out_of_stock_confirmations,
-          retired_at,
-          retirement_reason,
-          updated_at
-        )
-        VALUES (
-          @stableId,
-          @name,
-          @url,
-          @imageUrl,
-          @description,
-          @collection,
-          @price,
-          @normalizedSnapshotJson,
-          @rawFingerprint,
-          @buyableState,
-          @availableSizesJson,
-          @firstSeenAt,
-          @lastSeenAt,
-          @firstPublicAt,
-          @outOfStockConfirmations,
-          @retiredAt,
-          @retirementReason,
-          CURRENT_TIMESTAMP
-        )
-        ON CONFLICT(stable_id) DO UPDATE SET
-          name = excluded.name,
-          url = excluded.url,
-          image_url = excluded.image_url,
-          description = excluded.description,
-          collection = excluded.collection,
-          price = excluded.price,
-          normalized_snapshot_json = excluded.normalized_snapshot_json,
-          raw_fingerprint = excluded.raw_fingerprint,
-          buyable_state = excluded.buyable_state,
-          available_sizes_json = excluded.available_sizes_json,
-          first_seen_at = products.first_seen_at,
-          last_seen_at = excluded.last_seen_at,
-          first_public_at = COALESCE(products.first_public_at, excluded.first_public_at),
-          out_of_stock_confirmations = excluded.out_of_stock_confirmations,
-          retired_at = excluded.retired_at,
-          retirement_reason = excluded.retirement_reason,
-          updated_at = CURRENT_TIMESTAMP
-      `)
-      .run({
-        ...product,
+    this.#db
+      .insert(products)
+      .values({
+        stableId: product.stableId,
+        name: product.name,
+        url: product.url,
+        imageUrl: product.imageUrl,
+        description: product.description,
+        collection: product.collection,
+        price: product.price,
         normalizedSnapshotJson: JSON.stringify(product.normalizedSnapshot),
+        rawFingerprint: product.rawFingerprint,
+        buyableState: product.buyableState,
         availableSizesJson: JSON.stringify(product.availableSizes),
-      });
+        firstSeenAt: product.firstSeenAt,
+        lastSeenAt: product.lastSeenAt,
+        firstPublicAt: product.firstPublicAt,
+        outOfStockConfirmations: product.outOfStockConfirmations,
+        retiredAt: product.retiredAt,
+        retirementReason: product.retirementReason,
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .onConflictDoUpdate({
+        target: products.stableId,
+        set: {
+          name: sql`excluded.name`,
+          url: sql`excluded.url`,
+          imageUrl: sql`excluded.image_url`,
+          description: sql`excluded.description`,
+          collection: sql`excluded.collection`,
+          price: sql`excluded.price`,
+          normalizedSnapshotJson: sql`excluded.normalized_snapshot_json`,
+          rawFingerprint: sql`excluded.raw_fingerprint`,
+          buyableState: sql`excluded.buyable_state`,
+          availableSizesJson: sql`excluded.available_sizes_json`,
+          firstSeenAt: products.firstSeenAt,
+          lastSeenAt: sql`excluded.last_seen_at`,
+          firstPublicAt: sql`COALESCE(${products.firstPublicAt}, excluded.first_public_at)`,
+          outOfStockConfirmations: sql`excluded.out_of_stock_confirmations`,
+          retiredAt: sql`excluded.retired_at`,
+          retirementReason: sql`excluded.retirement_reason`,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        },
+      })
+      .run();
   }
 
   getProduct(stableId: string): ProductRecord | null {
-    const row = this.#database
-      .prepare<[string], ProductRow>(
-        "SELECT * FROM products WHERE stable_id = ?",
-      )
-      .get(stableId);
+    const row = this.#db
+      .select()
+      .from(products)
+      .where(eq(products.stableId, stableId))
+      .get();
 
     return row ? mapProductRow(row) : null;
   }
 
   recordEvent(event: EventRecord): PersistedEventRecord {
-    this.#database
-      .prepare(`
-        INSERT OR IGNORE INTO events (
-          event_hash,
-          event_type,
-          product_id,
-          payload_json,
-          notification_status,
-          attempt_count,
-          last_attempt_at,
-          notification_error,
-          created_at,
-          notified_at
-        )
-        VALUES (
-          @eventHash,
-          @eventType,
-          @productId,
-          @payloadJson,
-          @notificationStatus,
-          @attemptCount,
-          @lastAttemptAt,
-          @notificationError,
-          @createdAt,
-          @notifiedAt
-        )
-      `)
-      .run({
-        ...event,
+    this.#db
+      .insert(events)
+      .values({
+        eventHash: event.eventHash,
+        eventType: event.eventType,
+        productId: event.productId,
         payloadJson: JSON.stringify(event.payload),
-      });
+        notificationStatus: event.notificationStatus,
+        attemptCount: event.attemptCount,
+        lastAttemptAt: event.lastAttemptAt,
+        notificationError: event.notificationError,
+        createdAt: event.createdAt,
+        notifiedAt: event.notifiedAt,
+      })
+      .onConflictDoNothing()
+      .run();
 
     const persisted = this.getEventByHash(event.eventHash);
     if (!persisted) {
@@ -263,80 +183,70 @@ export class WatcherStateRepository {
   }
 
   getEventByHash(eventHash: string): PersistedEventRecord | null {
-    const row = this.#database
-      .prepare<[string], EventRow>("SELECT * FROM events WHERE event_hash = ?")
-      .get(eventHash);
+    const row = this.#db
+      .select()
+      .from(events)
+      .where(eq(events.eventHash, eventHash))
+      .get();
 
     return row ? mapEventRow(row) : null;
   }
 
   listPendingNotificationEvents(): PersistedEventRecord[] {
-    return this.#database
-      .prepare<[], EventRow>(`
-        SELECT *
-        FROM events
-        WHERE notification_status IN ('pending', 'dry_run')
-        ORDER BY created_at ASC, id ASC
-      `)
+    return this.#db
+      .select()
+      .from(events)
+      .where(inArray(events.notificationStatus, ["pending", "dry_run"]))
+      .orderBy(asc(events.createdAt), asc(events.id))
       .all()
       .map(mapEventRow);
   }
 
   markNotificationDryRun(id: number, notifiedAt: string): void {
-    this.#database
-      .prepare(`
-        UPDATE events
-        SET
-          notification_status = 'dry_run',
-          notification_error = NULL,
-          notified_at = @notifiedAt
-        WHERE id = @id
-      `)
-      .run({ id, notifiedAt });
+    this.#db
+      .update(events)
+      .set({
+        notificationStatus: "dry_run",
+        notificationError: null,
+        notifiedAt,
+      })
+      .where(eq(events.id, id))
+      .run();
   }
 
   markNotificationSent(id: number, notifiedAt: string): void {
-    this.#database
-      .prepare(`
-        UPDATE events
-        SET
-          notification_status = 'sent',
-          notification_error = NULL,
-          notified_at = @notifiedAt
-        WHERE id = @id
-      `)
-      .run({ id, notifiedAt });
+    this.#db
+      .update(events)
+      .set({
+        notificationStatus: "sent",
+        notificationError: null,
+        notifiedAt,
+      })
+      .where(eq(events.id, id))
+      .run();
   }
 
   recordNotificationFailure(update: NotificationFailureUpdate): void {
-    this.#database
-      .prepare(`
-        UPDATE events
-        SET
-          notification_status = @notificationStatus,
-          attempt_count = @attemptCount,
-          last_attempt_at = @lastAttemptAt,
-          notification_error = @notificationError
-        WHERE id = @id
-      `)
-      .run({
-        id: update.id,
+    this.#db
+      .update(events)
+      .set({
         attemptCount: update.attemptCount,
         lastAttemptAt: update.lastAttemptAt,
         notificationError: update.notificationError,
         notificationStatus: update.failed ? "failed" : "pending",
-      });
+      })
+      .where(eq(events.id, update.id))
+      .run();
   }
 
   startRun(startedAt: string): RunRecord {
-    const result = this.#database
-      .prepare(`
-        INSERT INTO runs (started_at, status)
-        VALUES (?, 'running')
-      `)
-      .run(startedAt);
+    const inserted = this.#db
+      .insert(runs)
+      .values({ startedAt, status: "running" })
+      .returning()
+      .get();
 
-    const run = this.getRun(Number(result.lastInsertRowid));
+    const run = this.getRun(inserted.id);
     if (!run) {
       throw new Error("Failed to start run");
     }
@@ -345,72 +255,47 @@ export class WatcherStateRepository {
   }
 
   finishRun(id: number, completion: RunCompletion): void {
-    this.#database
-      .prepare(`
-        UPDATE runs
-        SET
-          finished_at = @finishedAt,
-          status = @status,
-          product_count = @productCount,
-          error_message = @errorMessage
-        WHERE id = @id
-      `)
-      .run({ id, ...completion });
+    this.#db.update(runs).set(completion).where(eq(runs.id, id)).run();
   }
 
   getRun(id: number): RunRecord | null {
-    const row = this.#database
-      .prepare<[number], RunRow>("SELECT * FROM runs WHERE id = ?")
-      .get(id);
+    const row = this.#db.select().from(runs).where(eq(runs.id, id)).get();
 
     return row ? mapRunRow(row) : null;
   }
 
   setProductOverride(override: ProductOverride): void {
-    this.#database
-      .prepare(`
-        INSERT INTO product_overrides (
-          product_id,
-          denylisted,
-          force_retired,
-          force_watched,
-          known_employee_only,
-          annotation,
-          updated_at
-        )
-        VALUES (
-          @productId,
-          @denylisted,
-          @forceRetired,
-          @forceWatched,
-          @knownEmployeeOnly,
-          @annotation,
-          CURRENT_TIMESTAMP
-        )
-        ON CONFLICT(product_id) DO UPDATE SET
-          denylisted = excluded.denylisted,
-          force_retired = excluded.force_retired,
-          force_watched = excluded.force_watched,
-          known_employee_only = excluded.known_employee_only,
-          annotation = excluded.annotation,
-          updated_at = CURRENT_TIMESTAMP
-      `)
-      .run({
+    this.#db
+      .insert(productOverrides)
+      .values({
         productId: override.productId,
-        denylisted: Number(override.denylisted),
-        forceRetired: Number(override.forceRetired),
-        forceWatched: Number(override.forceWatched),
-        knownEmployeeOnly: Number(override.knownEmployeeOnly),
+        denylisted: override.denylisted,
+        forceRetired: override.forceRetired,
+        forceWatched: override.forceWatched,
+        knownEmployeeOnly: override.knownEmployeeOnly,
         annotation: override.annotation,
-      });
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .onConflictDoUpdate({
+        target: productOverrides.productId,
+        set: {
+          denylisted: sql`excluded.denylisted`,
+          forceRetired: sql`excluded.force_retired`,
+          forceWatched: sql`excluded.force_watched`,
+          knownEmployeeOnly: sql`excluded.known_employee_only`,
+          annotation: sql`excluded.annotation`,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        },
+      })
+      .run();
   }
 
   getProductOverride(productId: string): ProductOverride | null {
-    const row = this.#database
-      .prepare<[string], ProductOverrideRow>(
-        "SELECT * FROM product_overrides WHERE product_id = ?",
-      )
-      .get(productId);
+    const row = this.#db
+      .select()
+      .from(productOverrides)
+      .where(eq(productOverrides.productId, productId))
+      .get();
 
     return row ? mapProductOverrideRow(row) : null;
   }
@@ -418,60 +303,60 @@ export class WatcherStateRepository {
 
 function mapProductRow(row: ProductRow): ProductRecord {
   return {
-    stableId: row.stable_id,
+    stableId: row.stableId,
     name: row.name,
     url: row.url,
-    imageUrl: row.image_url,
+    imageUrl: row.imageUrl,
     description: row.description,
     collection: row.collection,
     price: row.price,
-    normalizedSnapshot: JSON.parse(row.normalized_snapshot_json) as JsonObject,
-    rawFingerprint: row.raw_fingerprint,
-    buyableState: row.buyable_state,
-    availableSizes: JSON.parse(row.available_sizes_json) as string[],
-    firstSeenAt: row.first_seen_at,
-    lastSeenAt: row.last_seen_at,
-    firstPublicAt: row.first_public_at,
-    outOfStockConfirmations: row.out_of_stock_confirmations,
-    retiredAt: row.retired_at,
-    retirementReason: row.retirement_reason,
+    normalizedSnapshot: JSON.parse(row.normalizedSnapshotJson) as JsonObject,
+    rawFingerprint: row.rawFingerprint,
+    buyableState: row.buyableState as BuyableState,
+    availableSizes: JSON.parse(row.availableSizesJson) as string[],
+    firstSeenAt: row.firstSeenAt,
+    lastSeenAt: row.lastSeenAt,
+    firstPublicAt: row.firstPublicAt,
+    outOfStockConfirmations: row.outOfStockConfirmations,
+    retiredAt: row.retiredAt,
+    retirementReason: row.retirementReason,
   };
 }
 
 function mapEventRow(row: EventRow): PersistedEventRecord {
   return {
     id: row.id,
-    eventHash: row.event_hash,
-    eventType: row.event_type,
-    productId: row.product_id,
-    payload: JSON.parse(row.payload_json) as JsonObject,
-    notificationStatus: row.notification_status,
-    attemptCount: row.attempt_count,
-    lastAttemptAt: row.last_attempt_at,
-    notificationError: row.notification_error,
-    createdAt: row.created_at,
-    notifiedAt: row.notified_at,
+    eventHash: row.eventHash,
+    eventType: row.eventType,
+    productId: row.productId,
+    payload: JSON.parse(row.payloadJson) as JsonObject,
+    notificationStatus: row.notificationStatus as NotificationStatus,
+    attemptCount: row.attemptCount,
+    lastAttemptAt: row.lastAttemptAt,
+    notificationError: row.notificationError,
+    createdAt: row.createdAt,
+    notifiedAt: row.notifiedAt,
   };
 }
 
 function mapRunRow(row: RunRow): RunRecord {
   return {
     id: row.id,
-    startedAt: row.started_at,
-    finishedAt: row.finished_at,
-    status: row.status,
-    productCount: row.product_count,
-    errorMessage: row.error_message,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+    status: row.status as RunStatus,
+    productCount: row.productCount,
+    errorMessage: row.errorMessage,
   };
 }
 
 function mapProductOverrideRow(row: ProductOverrideRow): ProductOverride {
   return {
-    productId: row.product_id,
-    denylisted: row.denylisted === 1,
-    forceRetired: row.force_retired === 1,
-    forceWatched: row.force_watched === 1,
-    knownEmployeeOnly: row.known_employee_only === 1,
+    productId: row.productId,
+    denylisted: row.denylisted,
+    forceRetired: row.forceRetired,
+    forceWatched: row.forceWatched,
+    knownEmployeeOnly: row.knownEmployeeOnly,
     annotation: row.annotation,
   };
 }
