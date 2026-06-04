@@ -11,3 +11,23 @@ Canonical triage roles use the default label strings (`needs-triage`, `needs-inf
 ### Domain docs
 
 Single-context layout: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Supplywatch Direction
+
+- Build a headless watcher, not a buyer: never automate checkout, bypass auth, submit personal data, or complete purchases.
+- Treat product detail state as the source of truth. `animate-wiggle` is only candidate evidence that should accelerate inspection.
+- Prefer low site load with fast escalation: observe cards, inspect new/changed/promising products, retire repeatedly out-of-stock products, and keep periodic full sweeps.
+- Keep deep modules around stable concepts: product discovery, detail inspection, availability classification, snapshot identity/fingerprinting, state diffing, notification delivery, and scheduling.
+- Test domain behavior with fixtures before live scraping. Live Playwright runs are for verification and fixture capture, not the only safety net.
+- Store enough evidence to audit decisions, but avoid noisy debug artifacts by default. Confirmed alerts and operational failures are the important artifact cases.
+
+## Learned User Preferences
+
+- Prefer `AGENTS.md` over `CLAUDE.md` for agent-oriented repo configuration.
+
+## Learned Workspace Facts
+
+- Biome handles formatting and linting; use `pnpm lint`, `pnpm lint:fix`, and `pnpm format`.
+- Biome formatter uses 2-space indentation.
+- README and repo images belong in `assets/`.
+- `.cursor/hooks/state/` is gitignored for local Cursor hook and continual-learning state.

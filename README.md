@@ -1,5 +1,7 @@
 # Supplywatch
 
+![Supplywatch monitors the OpenAI Supply Co. store and sends Discord alerts when new items drop](assets/readme.png)
+
 Supplywatch is a headless watcher for public OpenAI merch availability on `https://supplyco.openai.com`.
 
 This repository currently contains the foundation layer only: Node.js, TypeScript, Docker, environment config, and the initial worker entrypoint. The scraper, state machine, detectors, and Discord notification behavior will be added in later slices.
