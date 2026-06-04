@@ -87,6 +87,42 @@ async function runCaptureFixture(
   dependencies.log(`captured fixture: ${fixture.directory}`);
 }
 
+async function inspectProductForRun(
+  dependencies: Pick<CliDependencies, "inspect" | "saveDebugArtifact">,
+  product: DiscoveredProduct,
+  artifactDirectory: string,
+  capturedAt: string,
+): Promise<DetailInspectionResult | null> {
+  let inspection: DetailInspectionResult | null = null;
+
+  try {
+    inspection = await dependencies.inspect(product);
+  } catch (error) {
+    await dependencies.saveDebugArtifact({
+      directory: artifactDirectory,
+      reason: "inspection-error",
+      product,
+      inspection: null,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      capturedAt,
+    });
+    throw error;
+  }
+
+  if (inspection?.buyable) {
+    await dependencies.saveDebugArtifact({
+      directory: artifactDirectory,
+      reason: "confirmed-availability",
+      product,
+      inspection,
+      errorMessage: null,
+      capturedAt,
+    });
+  }
+
+  return inspection;
+}
+
 async function runWorker(dependencies: CliDependencies): Promise<void> {
   const config = dependencies.loadConfig();
 
@@ -110,40 +146,20 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
 
     for (const product of discovery.products) {
       const existing = state.repository.getProduct(product.stableId);
-      let inspection: DetailInspectionResult | null = null;
-
-      try {
-        inspection = await dependencies.inspect(product);
-      } catch (error) {
-        await dependencies.saveDebugArtifact({
-          directory: debugArtifactDirectory,
-          reason: "inspection-error",
-          product,
-          inspection: null,
-          errorMessage: error instanceof Error ? error.message : String(error),
-          capturedAt: observedAt,
-        });
-        throw error;
-      }
-
-      if (inspection) {
-        inspections.set(product.stableId, inspection);
-      }
-
-      if (inspection?.buyable) {
-        await dependencies.saveDebugArtifact({
-          directory: debugArtifactDirectory,
-          reason: "confirmed-availability",
-          product,
-          inspection,
-          errorMessage: null,
-          capturedAt: observedAt,
-        });
-      }
+      const inspection = await inspectProductForRun(
+        dependencies,
+        product,
+        debugArtifactDirectory,
+        observedAt,
+      );
 
       state.repository.upsertProduct(
         productObservationRecord(product, existing, observedAt, inspection),
       );
+
+      if (inspection) {
+        inspections.set(product.stableId, inspection);
+      }
     }
 
     logDryRunSummary(dependencies, discovery.products, inspections);
@@ -238,6 +254,11 @@ function logDryRunSummary(
   products: DiscoveredProduct[],
   inspections: Map<string, DetailInspectionResult>,
 ): void {
+  const inspectedCount = inspections.size;
+  const confirmedPublicAvailabilityCount = Array.from(
+    inspections.values(),
+  ).filter((inspection) => inspection.buyable).length;
+  const skippedDetailCheckCount = products.length - inspectedCount;
   const candidateSignals = Array.from(
     new Set(
       products.flatMap((product) =>
@@ -252,17 +273,11 @@ function logDryRunSummary(
   dependencies.log(
     `candidate signals: ${candidateSignals.length > 0 ? candidateSignals.join(", ") : "none"}`,
   );
-  dependencies.log(`inspected: ${inspections.size}`);
+  dependencies.log(`inspected: ${inspectedCount}`);
   dependencies.log(
-    `confirmed public availability: ${
-      Array.from(inspections.values()).filter(
-        (inspection) => inspection.buyable,
-      ).length
-    }`,
+    `confirmed public availability: ${confirmedPublicAvailabilityCount}`,
   );
-  dependencies.log(
-    `detail checks skipped: ${products.length - inspections.size}`,
-  );
+  dependencies.log(`detail checks skipped: ${skippedDetailCheckCount}`);
   dependencies.log("retired detail checks: 0");
   dependencies.log("Discord sends: 0");
 }
