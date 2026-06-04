@@ -155,6 +155,35 @@ describe("initializeStateSchema", () => {
       database.prepare("SELECT hash FROM __drizzle_migrations").get(),
     ).toBeDefined();
   });
+
+  it("adopts an existing state schema when the migration table exists without the initial migration record", () => {
+    const database = new Database(":memory:");
+    createLegacyStateSchema(database);
+    database.exec(`
+      CREATE TABLE "__drizzle_migrations" (
+        id SERIAL PRIMARY KEY,
+        hash text NOT NULL,
+        created_at numeric
+      );
+    `);
+
+    initializeStateSchema(database);
+
+    const repository = new WatcherStateRepository(database);
+    const run = repository.startRun("2026-06-04T15:00:00.000Z");
+
+    expect(repository.getRun(run.id)).toEqual({
+      id: run.id,
+      startedAt: "2026-06-04T15:00:00.000Z",
+      finishedAt: null,
+      status: "running",
+      productCount: 0,
+      errorMessage: null,
+    });
+    expect(
+      database.prepare("SELECT hash FROM __drizzle_migrations").get(),
+    ).toBeDefined();
+  });
 });
 
 describe("WatcherStateRepository products", () => {

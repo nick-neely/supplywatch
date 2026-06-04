@@ -17,7 +17,7 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "TMPDIR=/tmp tsx src/state/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
     "test:watch": "vitest",

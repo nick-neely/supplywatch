@@ -22,6 +22,7 @@ supplywatch renders the public Supply site with Playwright, watches product card
 pnpm install
 cp .env.example .env
 pnpm playwright:install
+pnpm db:migrate
 pnpm dev poll-once
 ```
 
@@ -57,9 +58,6 @@ pnpm build
 pnpm start
 pnpm typecheck
 pnpm test
-pnpm db:generate          # generate Drizzle migrations from src/state/tables.ts
-pnpm db:migrate           # apply migrations to DATABASE_PATH
-pnpm db:studio            # inspect DATABASE_PATH with Drizzle Studio
 ```
 
 Fixture capture renders the supplied product/detail URL with Playwright and saves
@@ -68,9 +66,20 @@ Use states such as `out-of-stock`, `purchase-button`, `employee-gated-login`,
 `sized`, `sizeless`, `disabled-size`, `enabled-size`, or
 `animate-wiggle-candidate`.
 
-`DATABASE_PATH` remains the source of truth for the watcher state database. The
-Drizzle config defaults to `./data/supplywatch.sqlite`, matching the app's
-runtime default when the environment variable is not set.
+## Database
+
+`DATABASE_PATH` is the watcher state database. If it is not set, the app and
+Drizzle tools use `./data/supplywatch.sqlite`.
+
+```bash
+pnpm db:generate                    # create a migration after editing src/state/tables.ts
+pnpm db:migrate                     # apply migrations to DATABASE_PATH
+pnpm db:studio                      # open Drizzle Studio for DATABASE_PATH
+DATABASE_PATH=./data/review.sqlite pnpm db:studio
+```
+
+Use a different `DATABASE_PATH` only when you intentionally want a separate
+local database for review or experiments.
 
 ## Docker
 

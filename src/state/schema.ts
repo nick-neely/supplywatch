@@ -12,19 +12,25 @@ const INITIAL_MIGRATION = {
 export function initializeStateSchema(database: Database.Database): void {
   database.pragma("foreign_keys = ON");
 
-  if (hasLegacyStateSchema(database)) {
+  if (hasUnrecordedInitialStateSchema(database)) {
     recordInitialMigration(database);
   }
 
   migrate(drizzle(database), { migrationsFolder: "drizzle" });
 }
 
-function hasLegacyStateSchema(database: Database.Database): boolean {
-  if (tableExists(database, DRIZZLE_MIGRATIONS_TABLE)) {
+function hasUnrecordedInitialStateSchema(database: Database.Database): boolean {
+  if (!STATE_TABLE_NAMES.every((table) => tableExists(database, table))) {
     return false;
   }
 
-  return STATE_TABLE_NAMES.every((table) => tableExists(database, table));
+  if (!tableExists(database, DRIZZLE_MIGRATIONS_TABLE)) {
+    return true;
+  }
+
+  return !database
+    .prepare("SELECT 1 FROM __drizzle_migrations WHERE hash = ?")
+    .get(INITIAL_MIGRATION.hash);
 }
 
 function tableExists(database: Database.Database, tableName: string): boolean {
