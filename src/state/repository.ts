@@ -45,6 +45,8 @@ export type EventRecord = {
   notifiedAt: string | null;
 };
 
+export type PersistedEventRecord = EventRecord & { id: number };
+
 export type RunStatus = "running" | "completed" | "failed";
 
 export type RunRecord = {
@@ -52,6 +54,13 @@ export type RunRecord = {
   startedAt: string;
   finishedAt: string | null;
   status: RunStatus;
+  productCount: number;
+  errorMessage: string | null;
+};
+
+export type RunCompletion = {
+  finishedAt: string;
+  status: Exclude<RunStatus, "running">;
   productCount: number;
   errorMessage: string | null;
 };
@@ -196,13 +205,15 @@ export class WatcherStateRepository {
 
   getProduct(stableId: string): ProductRecord | null {
     const row = this.#database
-      .prepare("SELECT * FROM products WHERE stable_id = ?")
-      .get(stableId) as ProductRow | undefined;
+      .prepare<[string], ProductRow>(
+        "SELECT * FROM products WHERE stable_id = ?",
+      )
+      .get(stableId);
 
     return row ? mapProductRow(row) : null;
   }
 
-  recordEvent(event: EventRecord): EventRecord & { id: number } {
+  recordEvent(event: EventRecord): PersistedEventRecord {
     this.#database
       .prepare(`
         INSERT OR IGNORE INTO events (
@@ -243,10 +254,10 @@ export class WatcherStateRepository {
     return persisted;
   }
 
-  getEventByHash(eventHash: string): (EventRecord & { id: number }) | null {
+  getEventByHash(eventHash: string): PersistedEventRecord | null {
     const row = this.#database
-      .prepare("SELECT * FROM events WHERE event_hash = ?")
-      .get(eventHash) as EventRow | undefined;
+      .prepare<[string], EventRow>("SELECT * FROM events WHERE event_hash = ?")
+      .get(eventHash);
 
     return row ? mapEventRow(row) : null;
   }
@@ -267,15 +278,7 @@ export class WatcherStateRepository {
     return run;
   }
 
-  finishRun(
-    id: number,
-    completion: {
-      finishedAt: string;
-      status: Exclude<RunStatus, "running">;
-      productCount: number;
-      errorMessage: string | null;
-    },
-  ): void {
+  finishRun(id: number, completion: RunCompletion): void {
     this.#database
       .prepare(`
         UPDATE runs
@@ -291,8 +294,8 @@ export class WatcherStateRepository {
 
   getRun(id: number): RunRecord | null {
     const row = this.#database
-      .prepare("SELECT * FROM runs WHERE id = ?")
-      .get(id) as RunRow | undefined;
+      .prepare<[number], RunRow>("SELECT * FROM runs WHERE id = ?")
+      .get(id);
 
     return row ? mapRunRow(row) : null;
   }
@@ -338,8 +341,10 @@ export class WatcherStateRepository {
 
   getProductOverride(productId: string): ProductOverride | null {
     const row = this.#database
-      .prepare("SELECT * FROM product_overrides WHERE product_id = ?")
-      .get(productId) as ProductOverrideRow | undefined;
+      .prepare<[string], ProductOverrideRow>(
+        "SELECT * FROM product_overrides WHERE product_id = ?",
+      )
+      .get(productId);
 
     return row ? mapProductOverrideRow(row) : null;
   }
@@ -367,7 +372,7 @@ function mapProductRow(row: ProductRow): ProductRecord {
   };
 }
 
-function mapEventRow(row: EventRow): EventRecord & { id: number } {
+function mapEventRow(row: EventRow): PersistedEventRecord {
   return {
     id: row.id,
     eventHash: row.event_hash,

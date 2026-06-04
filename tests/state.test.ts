@@ -4,8 +4,66 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { openStateRepository } from "../src/state/database.js";
-import { WatcherStateRepository } from "../src/state/repository.js";
+import {
+  type EventRecord,
+  type ProductOverride,
+  type ProductRecord,
+  WatcherStateRepository,
+} from "../src/state/repository.js";
 import { initializeStateSchema } from "../src/state/schema.js";
+
+const PRODUCT_SNAPSHOT: ProductRecord = {
+  stableId: "product-openai-tee",
+  name: "OpenAI Tee",
+  url: "https://supplyco.openai.com/products/openai-tee",
+  imageUrl: "https://cdn.example/openai-tee.png",
+  description: "A public product detail snapshot",
+  collection: "Apparel",
+  price: "$20",
+  normalizedSnapshot: {
+    stableId: "product-openai-tee",
+    name: "OpenAI Tee",
+    buyable: true,
+  },
+  rawFingerprint: "fingerprint-1",
+  buyableState: "publicly_buyable",
+  availableSizes: ["M", "L"],
+  firstSeenAt: "2026-06-04T15:00:00.000Z",
+  lastSeenAt: "2026-06-04T15:05:00.000Z",
+  firstPublicAt: "2026-06-04T15:05:00.000Z",
+  outOfStockConfirmations: 0,
+  retiredAt: null,
+  retirementReason: null,
+};
+
+const BUYABLE_EVENT: EventRecord = {
+  eventHash: "public-openai-tee-fingerprint-1",
+  eventType: "product_publicly_buyable",
+  productId: null,
+  payload: {
+    productName: "OpenAI Tee",
+    confidence: 0.98,
+  },
+  notificationStatus: "pending",
+  attemptCount: 2,
+  lastAttemptAt: "2026-06-04T15:10:00.000Z",
+  notificationError: "Webhook timeout",
+  createdAt: "2026-06-04T15:05:00.000Z",
+  notifiedAt: null,
+};
+
+const PRODUCT_OVERRIDE: ProductOverride = {
+  productId: "product-employee-hoodie",
+  denylisted: true,
+  forceRetired: false,
+  forceWatched: true,
+  knownEmployeeOnly: true,
+  annotation: "Employee-only product observed during fixture capture",
+};
+
+type TableInfoRow = {
+  name: string;
+};
 
 describe("initializeStateSchema", () => {
   it("creates persistent watcher state tables with required columns", () => {
@@ -16,7 +74,7 @@ describe("initializeStateSchema", () => {
     const columnsByTable = new Map<string, string[]>();
     for (const table of ["products", "events", "runs", "product_overrides"]) {
       const columns = database
-        .prepare(`PRAGMA table_info(${table})`)
+        .prepare<[], TableInfoRow>(`PRAGMA table_info(${table})`)
         .all()
         .map((column) => column.name);
       columnsByTable.set(table, columns);
@@ -75,53 +133,11 @@ describe("WatcherStateRepository products", () => {
     const database = new Database(":memory:");
     const repository = new WatcherStateRepository(database);
 
-    repository.upsertProduct({
-      stableId: "product-openai-tee",
-      name: "OpenAI Tee",
-      url: "https://supplyco.openai.com/products/openai-tee",
-      imageUrl: "https://cdn.example/openai-tee.png",
-      description: "A public product detail snapshot",
-      collection: "Apparel",
-      price: "$20",
-      normalizedSnapshot: {
-        stableId: "product-openai-tee",
-        name: "OpenAI Tee",
-        buyable: true,
-      },
-      rawFingerprint: "fingerprint-1",
-      buyableState: "publicly_buyable",
-      availableSizes: ["M", "L"],
-      firstSeenAt: "2026-06-04T15:00:00.000Z",
-      lastSeenAt: "2026-06-04T15:05:00.000Z",
-      firstPublicAt: "2026-06-04T15:05:00.000Z",
-      outOfStockConfirmations: 0,
-      retiredAt: null,
-      retirementReason: null,
-    });
+    repository.upsertProduct(PRODUCT_SNAPSHOT);
 
-    expect(repository.getProduct("product-openai-tee")).toEqual({
-      stableId: "product-openai-tee",
-      name: "OpenAI Tee",
-      url: "https://supplyco.openai.com/products/openai-tee",
-      imageUrl: "https://cdn.example/openai-tee.png",
-      description: "A public product detail snapshot",
-      collection: "Apparel",
-      price: "$20",
-      normalizedSnapshot: {
-        stableId: "product-openai-tee",
-        name: "OpenAI Tee",
-        buyable: true,
-      },
-      rawFingerprint: "fingerprint-1",
-      buyableState: "publicly_buyable",
-      availableSizes: ["M", "L"],
-      firstSeenAt: "2026-06-04T15:00:00.000Z",
-      lastSeenAt: "2026-06-04T15:05:00.000Z",
-      firstPublicAt: "2026-06-04T15:05:00.000Z",
-      outOfStockConfirmations: 0,
-      retiredAt: null,
-      retirementReason: null,
-    });
+    expect(repository.getProduct("product-openai-tee")).toEqual(
+      PRODUCT_SNAPSHOT,
+    );
   });
 });
 
@@ -130,21 +146,7 @@ describe("WatcherStateRepository events", () => {
     const database = new Database(":memory:");
     const repository = new WatcherStateRepository(database);
 
-    const firstEvent = repository.recordEvent({
-      eventHash: "public-openai-tee-fingerprint-1",
-      eventType: "product_publicly_buyable",
-      productId: null,
-      payload: {
-        productName: "OpenAI Tee",
-        confidence: 0.98,
-      },
-      notificationStatus: "pending",
-      attemptCount: 2,
-      lastAttemptAt: "2026-06-04T15:10:00.000Z",
-      notificationError: "Webhook timeout",
-      createdAt: "2026-06-04T15:05:00.000Z",
-      notifiedAt: null,
-    });
+    const firstEvent = repository.recordEvent(BUYABLE_EVENT);
     const duplicateEvent = repository.recordEvent({
       eventHash: "public-openai-tee-fingerprint-1",
       eventType: "product_publicly_buyable",
@@ -165,19 +167,7 @@ describe("WatcherStateRepository events", () => {
       repository.getEventByHash("public-openai-tee-fingerprint-1"),
     ).toEqual({
       id: firstEvent.id,
-      eventHash: "public-openai-tee-fingerprint-1",
-      eventType: "product_publicly_buyable",
-      productId: null,
-      payload: {
-        productName: "OpenAI Tee",
-        confidence: 0.98,
-      },
-      notificationStatus: "pending",
-      attemptCount: 2,
-      lastAttemptAt: "2026-06-04T15:10:00.000Z",
-      notificationError: "Webhook timeout",
-      createdAt: "2026-06-04T15:05:00.000Z",
-      notifiedAt: null,
+      ...BUYABLE_EVENT,
     });
   });
 });
@@ -211,23 +201,11 @@ describe("WatcherStateRepository product overrides", () => {
     const database = new Database(":memory:");
     const repository = new WatcherStateRepository(database);
 
-    repository.setProductOverride({
-      productId: "product-employee-hoodie",
-      denylisted: true,
-      forceRetired: false,
-      forceWatched: true,
-      knownEmployeeOnly: true,
-      annotation: "Employee-only product observed during fixture capture",
-    });
+    repository.setProductOverride(PRODUCT_OVERRIDE);
 
-    expect(repository.getProductOverride("product-employee-hoodie")).toEqual({
-      productId: "product-employee-hoodie",
-      denylisted: true,
-      forceRetired: false,
-      forceWatched: true,
-      knownEmployeeOnly: true,
-      annotation: "Employee-only product observed during fixture capture",
-    });
+    expect(repository.getProductOverride("product-employee-hoodie")).toEqual(
+      PRODUCT_OVERRIDE,
+    );
   });
 });
 
@@ -235,21 +213,30 @@ describe("openStateRepository", () => {
   it("creates parent directories and initializes a configured SQLite file", () => {
     const directory = mkdtempSync(join(tmpdir(), "supplywatch-state-"));
     const databasePath = join(directory, "nested", "supplywatch.sqlite");
-
     const state = openStateRepository(databasePath);
-    const run = state.repository.startRun("2026-06-04T15:00:00.000Z");
-    state.close();
 
-    const reopened = openStateRepository(databasePath);
-    expect(reopened.repository.getRun(run.id)).toEqual({
-      id: run.id,
-      startedAt: "2026-06-04T15:00:00.000Z",
-      finishedAt: null,
-      status: "running",
-      productCount: 0,
-      errorMessage: null,
-    });
-    reopened.close();
-    rmSync(directory, { force: true, recursive: true });
+    try {
+      const run = state.repository.startRun("2026-06-04T15:00:00.000Z");
+      state.close();
+
+      const reopened = openStateRepository(databasePath);
+      try {
+        expect(reopened.repository.getRun(run.id)).toEqual({
+          id: run.id,
+          startedAt: "2026-06-04T15:00:00.000Z",
+          finishedAt: null,
+          status: "running",
+          productCount: 0,
+          errorMessage: null,
+        });
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      if (state.database.open) {
+        state.close();
+      }
+      rmSync(directory, { force: true, recursive: true });
+    }
   });
 });
