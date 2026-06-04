@@ -19,6 +19,8 @@ import {
 import {
   type DiscordWebhookSender,
   dispatchPendingNotifications,
+  type NotificationDispatchOptions,
+  type NotificationDispatchResult,
   sendDiscordWebhook,
 } from "./notifications/discord.js";
 import {
@@ -143,14 +145,7 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
   const run = state.repository.startRun(new Date().toISOString());
 
   try {
-    await dispatchPendingNotifications(state.repository, {
-      dryRun: config.DRY_RUN,
-      webhookUrl: config.DISCORD_WEBHOOK_URL,
-      now: new Date().toISOString(),
-      maxAttempts: config.NOTIFY_MAX_ATTEMPTS,
-      send: dependencies.sendDiscordWebhook,
-      log: dependencies.log,
-    });
+    await dispatchNotificationsForRun(state.repository, config, dependencies);
 
     const discovery = await dependencies.poll({
       targetUrl: config.SUPPLYWATCH_TARGET_URL,
@@ -197,16 +192,10 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
 
     logDryRunSummary(dependencies, discovery.products, inspections, diffs);
 
-    const notificationResult = await dispatchPendingNotifications(
+    const notificationResult = await dispatchNotificationsForRun(
       state.repository,
-      {
-        dryRun: config.DRY_RUN,
-        webhookUrl: config.DISCORD_WEBHOOK_URL,
-        now: new Date().toISOString(),
-        maxAttempts: config.NOTIFY_MAX_ATTEMPTS,
-        send: dependencies.sendDiscordWebhook,
-        log: dependencies.log,
-      },
+      config,
+      dependencies,
     );
 
     dependencies.log(`Discord sends: ${notificationResult.sent}`);
@@ -230,6 +219,30 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
   } finally {
     state.close();
   }
+}
+
+async function dispatchNotificationsForRun(
+  repository: OpenStateRepository["repository"],
+  config: ReturnType<typeof loadConfig>,
+  dependencies: Pick<CliDependencies, "sendDiscordWebhook" | "log">,
+): Promise<NotificationDispatchResult> {
+  return dispatchPendingNotifications(repository, {
+    ...notificationDispatchOptions(config, dependencies),
+    now: new Date().toISOString(),
+  });
+}
+
+function notificationDispatchOptions(
+  config: ReturnType<typeof loadConfig>,
+  dependencies: Pick<CliDependencies, "sendDiscordWebhook" | "log">,
+): Omit<NotificationDispatchOptions, "now"> {
+  return {
+    dryRun: config.DRY_RUN,
+    webhookUrl: config.DISCORD_WEBHOOK_URL,
+    maxAttempts: config.NOTIFY_MAX_ATTEMPTS,
+    send: dependencies.sendDiscordWebhook,
+    log: dependencies.log,
+  };
 }
 
 async function inspectDiscoveredProduct(

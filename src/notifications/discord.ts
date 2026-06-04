@@ -55,6 +55,8 @@ export type NotificationDispatchOptions = {
 const MERCH_COLOR = 0x10a37f;
 const HEALTH_COLOR = 0xf59e0b;
 const DEFAULT_RETRY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const RETRY_WINDOW_EXPIRED_ERROR =
+  "Notification retry window expired after roughly 24 hours";
 
 export async function dispatchPendingNotifications(
   repository: WatcherStateRepository,
@@ -67,6 +69,7 @@ export async function dispatchPendingNotifications(
     skipped: 0,
   };
   const retryWindowMs = options.retryWindowMs ?? DEFAULT_RETRY_WINDOW_MS;
+  const send = options.send ?? sendDiscordWebhook;
 
   for (const event of repository.listPendingNotificationEvents()) {
     if (!isDiscordAlertEvent(event)) {
@@ -75,26 +78,27 @@ export async function dispatchPendingNotifications(
     }
 
     if (retryWindowExpired(event, options.now, retryWindowMs)) {
-      repository.recordNotificationFailure({
-        id: event.id,
-        attemptCount: event.attemptCount,
-        lastAttemptAt: options.now,
-        notificationError:
-          "Notification retry window expired after roughly 24 hours",
-        failed: true,
-      });
+      recordFailedNotification(
+        repository,
+        event,
+        event.attemptCount,
+        options.now,
+        RETRY_WINDOW_EXPIRED_ERROR,
+        true,
+      );
       result.failed += 1;
       continue;
     }
 
     if (event.attemptCount >= options.maxAttempts) {
-      repository.recordNotificationFailure({
-        id: event.id,
-        attemptCount: event.attemptCount,
-        lastAttemptAt: options.now,
-        notificationError: `Notification retry limit reached after ${event.attemptCount} attempts`,
-        failed: true,
-      });
+      recordFailedNotification(
+        repository,
+        event,
+        event.attemptCount,
+        options.now,
+        retryLimitReachedError(event.attemptCount),
+        true,
+      );
       result.failed += 1;
       continue;
     }
@@ -113,24 +117,53 @@ export async function dispatchPendingNotifications(
     }
 
     try {
-      await (options.send ?? sendDiscordWebhook)(options.webhookUrl, payload);
+      await send(options.webhookUrl, payload);
       repository.markNotificationSent(event.id, options.now);
       result.sent += 1;
     } catch (error) {
       const attemptCount = event.attemptCount + 1;
-      repository.recordNotificationFailure({
-        id: event.id,
+      const failed = attemptCount >= options.maxAttempts;
+      recordFailedNotification(
+        repository,
+        event,
         attemptCount,
-        lastAttemptAt: options.now,
-        notificationError:
-          error instanceof Error ? error.message : String(error),
-        failed: attemptCount >= options.maxAttempts,
-      });
-      result.failed += attemptCount >= options.maxAttempts ? 1 : 0;
+        options.now,
+        errorMessage(error),
+        failed,
+      );
+
+      if (failed) {
+        result.failed += 1;
+      }
     }
   }
 
   return result;
+}
+
+function recordFailedNotification(
+  repository: WatcherStateRepository,
+  event: PersistedEventRecord,
+  attemptCount: number,
+  lastAttemptAt: string,
+  notificationError: string,
+  failed: boolean,
+): void {
+  repository.recordNotificationFailure({
+    id: event.id,
+    attemptCount,
+    lastAttemptAt,
+    notificationError,
+    failed,
+  });
+}
+
+function retryLimitReachedError(attemptCount: number): string {
+  return `Notification retry limit reached after ${attemptCount} attempts`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function retryWindowExpired(
