@@ -30,8 +30,18 @@ export type ProductInspectionDecisionInput = {
   override: ProductOverride | null;
 };
 
+type ProductSnapshotEventType =
+  | "override_applied"
+  | "candidate_signal_observed"
+  | "out_of_stock_confirmed"
+  | "product_retired"
+  | "product_unretired"
+  | "public_purchase_available"
+  | "newly_available_size"
+  | "likely_restock";
+
 const DEFAULT_RETIRE_AFTER_OUT_OF_STOCK_CONFIRMATIONS = 3;
-const MERCH_EVENT_TYPES = new Set([
+const MERCH_EVENT_TYPES: ReadonlySet<ProductSnapshotEventType> = new Set([
   "public_purchase_available",
   "newly_available_size",
   "likely_restock",
@@ -88,10 +98,13 @@ function productRecordFromSnapshot(
   existing: ProductRecord | null,
   override: ProductOverride | null,
 ): ProductRecord {
-  const buyableState = buyableStateFromInspection(input.inspection, existing);
-  const overriddenBuyableState = override?.knownEmployeeOnly
+  const inspectionBuyableState = buyableStateFromInspection(
+    input.inspection,
+    existing,
+  );
+  const buyableState = override?.knownEmployeeOnly
     ? "employee_only"
-    : buyableState;
+    : inspectionBuyableState;
   const availableSizes = override?.knownEmployeeOnly
     ? (existing?.availableSizes ?? [])
     : (input.inspection?.availableSizes ?? existing?.availableSizes ?? []);
@@ -110,14 +123,14 @@ function productRecordFromSnapshot(
     existing,
     override,
     observedAt: input.observedAt,
-    buyableState: overriddenBuyableState,
+    buyableState,
     outOfStockConfirmations,
     retireAfterOutOfStockConfirmations:
       input.retireAfterOutOfStockConfirmations ??
       DEFAULT_RETIRE_AFTER_OUT_OF_STOCK_CONFIRMATIONS,
   });
   const isFirstPublicObservation =
-    overriddenBuyableState === "publicly_buyable" && !existing?.firstPublicAt;
+    buyableState === "publicly_buyable" && !existing?.firstPublicAt;
 
   return {
     stableId: input.product.stableId,
@@ -129,7 +142,7 @@ function productRecordFromSnapshot(
     price: input.product.price,
     normalizedSnapshot,
     rawFingerprint: fingerprintSnapshot(normalizedSnapshot),
-    buyableState: overriddenBuyableState,
+    buyableState,
     availableSizes,
     firstSeenAt: existing?.firstSeenAt ?? input.observedAt,
     lastSeenAt: input.observedAt,
@@ -149,6 +162,10 @@ function domainEvents(
   override: ProductOverride | null,
 ): EventRecord[] {
   const events: EventRecord[] = [];
+  const canNotifyAvailability = canCreateMerchAvailabilityEvent(
+    current,
+    override,
+  );
 
   if (override && hasActiveOverride(override)) {
     events.push(
@@ -232,11 +249,8 @@ function domainEvents(
   }
 
   if (
-    current.buyableState === "publicly_buyable" &&
-    (existing?.buyableState !== "publicly_buyable" ||
-      current.rawFingerprint === existing.rawFingerprint) &&
-    !override?.denylisted &&
-    !override?.knownEmployeeOnly
+    shouldRecordPublicPurchaseEvent(current, existing) &&
+    canNotifyAvailability
   ) {
     events.push(
       buildEvent({
@@ -254,13 +268,7 @@ function domainEvents(
     (size) => !existing?.availableSizes.includes(size),
   );
 
-  if (
-    current.buyableState === "publicly_buyable" &&
-    existing &&
-    newlyAvailableSizes.length > 0 &&
-    !override?.denylisted &&
-    !override?.knownEmployeeOnly
-  ) {
+  if (canNotifyAvailability && existing && newlyAvailableSizes.length > 0) {
     events.push(
       buildEvent({
         eventType: "newly_available_size",
@@ -275,12 +283,7 @@ function domainEvents(
     );
   }
 
-  if (
-    current.buyableState === "publicly_buyable" &&
-    existing?.buyableState === "out_of_stock" &&
-    !override?.denylisted &&
-    !override?.knownEmployeeOnly
-  ) {
+  if (canNotifyAvailability && existing?.buyableState === "out_of_stock") {
     events.push(
       buildEvent({
         eventType: "likely_restock",
@@ -296,12 +299,14 @@ function domainEvents(
 }
 
 function buildEvent(options: {
-  eventType: string;
+  eventType: ProductSnapshotEventType;
   product: ProductRecord;
   observedAt: string;
   dedupeKey: string;
   payload: Record<string, unknown>;
 }): EventRecord {
+  const isMerchEvent = MERCH_EVENT_TYPES.has(options.eventType);
+
   return {
     eventHash: hash(
       stableJson({
@@ -313,22 +318,40 @@ function buildEvent(options: {
     eventType: options.eventType,
     productId: options.product.stableId,
     payload: {
-      alertKind: MERCH_EVENT_TYPES.has(options.eventType)
-        ? "merch"
-        : "state_evidence",
+      alertKind: isMerchEvent ? "merch" : "state_evidence",
       productId: options.product.stableId,
       observedAt: options.observedAt,
       ...options.payload,
     },
-    notificationStatus: MERCH_EVENT_TYPES.has(options.eventType)
-      ? "pending"
-      : "dry_run",
+    notificationStatus: isMerchEvent ? "pending" : "dry_run",
     attemptCount: 0,
     lastAttemptAt: null,
     notificationError: null,
     createdAt: options.observedAt,
     notifiedAt: null,
   };
+}
+
+function shouldRecordPublicPurchaseEvent(
+  current: ProductRecord,
+  existing: ProductRecord | null,
+): boolean {
+  return (
+    current.buyableState === "publicly_buyable" &&
+    (existing?.buyableState !== "publicly_buyable" ||
+      current.rawFingerprint === existing.rawFingerprint)
+  );
+}
+
+function canCreateMerchAvailabilityEvent(
+  current: ProductRecord,
+  override: ProductOverride | null,
+): boolean {
+  return (
+    current.buyableState === "publicly_buyable" &&
+    !override?.denylisted &&
+    !override?.knownEmployeeOnly
+  );
 }
 
 function publicPurchasePayload(
