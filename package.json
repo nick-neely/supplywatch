@@ -21,6 +21,7 @@
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify": "concurrently -n typecheck,lint,build,test -c blue,magenta,green,yellow \"pnpm typecheck\" \"pnpm lint\" \"pnpm build\" \"pnpm test\"",
     "playwright:install": "playwright install chromium",
     "sandcastle": "pnpm exec tsx .sandcastle/main.ts",
     "sandcastle:build-image": "sandcastle docker build-image"
@@ -38,6 +39,7 @@
     "@biomejs/biome": "^2.4.16",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.10.1",
+    "concurrently": "^10.0.3",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
