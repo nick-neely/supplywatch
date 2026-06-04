@@ -12,7 +12,7 @@ Canonical triage roles use the default label strings (`needs-triage`, `needs-inf
 
 Single-context layout: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
-## Supplywatch Direction
+## supplywatch Direction
 
 - Build a headless watcher, not a buyer: never automate checkout, bypass auth, submit personal data, or complete purchases.
 - Treat product detail state as the source of truth. `animate-wiggle` is only candidate evidence that should accelerate inspection.
