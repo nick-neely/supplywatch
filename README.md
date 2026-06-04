@@ -31,11 +31,18 @@ pnpm dev
 
 ```bash
 pnpm dev        # run the TypeScript worker entrypoint
+pnpm capture:fixture -- --url https://supplyco.openai.com/products/example --state purchase-button --name example
 pnpm build      # compile TypeScript into dist/
 pnpm start      # run the compiled worker
 pnpm typecheck  # type-check without emitting files
 pnpm test       # run tests
 ```
+
+Fixture capture renders the supplied product/detail URL with Playwright and saves
+`detail.html` plus `metadata.json` under `fixtures/product-states/<state>/<name>/`.
+Use states such as `out-of-stock`, `purchase-button`, `employee-gated-login`,
+`sized`, `sizeless`, `disabled-size`, `enabled-size`, or
+`animate-wiggle-candidate`.
 
 ## Docker
 

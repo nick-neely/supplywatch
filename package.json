@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "TMPDIR=/tmp tsx src/worker.ts",
+    "capture:fixture": "TMPDIR=/tmp tsx src/worker.ts capture-fixture",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/worker.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",

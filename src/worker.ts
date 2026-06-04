@@ -1,13 +1,7 @@
-import { loadConfig, redactConfig } from "./config/env.js";
+import { runCli } from "./cli.js";
 
 async function main(): Promise<void> {
-  const config = loadConfig();
-
-  console.log("supplywatch worker starting");
-  console.log(JSON.stringify(redactConfig(config), null, 2));
-  console.log(
-    "Foundation layer is ready. Scraper and state machine are not implemented yet.",
-  );
+  await runCli(process.argv.slice(2));
 }
 
 main().catch((error: unknown) => {
