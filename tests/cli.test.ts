@@ -275,6 +275,106 @@ describe("runCli", () => {
     );
   });
 
+  it("sends previously pending Discord notifications at worker startup", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "supplywatch-cli-"));
+    const databasePath = join(tempDir, "supplywatch.sqlite");
+    const state = openStateRepository(databasePath);
+    try {
+      state.repository.upsertProduct({
+        stableId: "url-products-public-drop-tee",
+        name: "Public Drop Tee",
+        url: "https://supplyco.openai.com/products/public-drop-tee",
+        imageUrl: "https://cdn.example/public-drop-tee.png",
+        description: "Soft launch shirt",
+        collection: "Apparel",
+        price: "$28",
+        normalizedSnapshot: {
+          stableId: "url-products-public-drop-tee",
+          buyable: true,
+        },
+        rawFingerprint: "fingerprint-1",
+        buyableState: "publicly_buyable",
+        availableSizes: ["M"],
+        firstSeenAt: "2026-06-04T15:00:00.000Z",
+        lastSeenAt: "2026-06-04T15:00:00.000Z",
+        firstPublicAt: "2026-06-04T15:00:00.000Z",
+        outOfStockConfirmations: 0,
+        retiredAt: null,
+        retirementReason: null,
+      });
+      state.repository.recordEvent({
+        eventHash: "public-drop-tee-alert",
+        eventType: "public_purchase_available",
+        productId: "url-products-public-drop-tee",
+        payload: {
+          alertKind: "merch",
+          productId: "url-products-public-drop-tee",
+          observedAt: "2026-06-04T15:00:00.000Z",
+          productName: "Public Drop Tee",
+          productUrl: "https://supplyco.openai.com/products/public-drop-tee",
+          imageUrl: "https://cdn.example/public-drop-tee.png",
+          description: "Soft launch shirt",
+          price: "$28",
+          availableSizes: ["M"],
+          confidence: "high",
+          evidence: [],
+        },
+        notificationStatus: "pending",
+        attemptCount: 0,
+        lastAttemptAt: null,
+        notificationError: null,
+        createdAt: "2026-06-04T15:00:00.000Z",
+        notifiedAt: null,
+      });
+    } finally {
+      state.close();
+    }
+    const sendDiscordWebhook = vi.fn().mockResolvedValue(undefined);
+
+    await runCli([], {
+      loadConfig: () => ({
+        SUPPLYWATCH_TARGET_URL: "https://supplyco.openai.com",
+        DATABASE_PATH: databasePath,
+        DRY_RUN: false,
+        DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/example",
+        POLL_INTERVAL_SECONDS: 60,
+        OBSERVATION_WINDOW_SECONDS: 15,
+        FULL_SWEEP_INTERVAL_MINUTES: 60,
+        OUT_OF_STOCK_RETIRE_CONFIRMATIONS: 3,
+        NOTIFY_MAX_ATTEMPTS: 10,
+      }),
+      log: vi.fn(),
+      poll: vi.fn().mockResolvedValue({
+        products: [],
+        observedWindowMs: 15_000,
+      }),
+      inspect: vi.fn(),
+      saveDebugArtifact: vi.fn().mockResolvedValue(undefined),
+      sendDiscordWebhook,
+    });
+
+    expect(sendDiscordWebhook).toHaveBeenCalledWith(
+      "https://discord.com/api/webhooks/example",
+      expect.objectContaining({
+        embeds: [expect.objectContaining({ title: "Public Drop Tee" })],
+      }),
+    );
+
+    const reopened = openStateRepository(databasePath);
+    try {
+      expect(
+        reopened.repository.getEventByHash("public-drop-tee-alert"),
+      ).toEqual(
+        expect.objectContaining({
+          notificationStatus: "sent",
+          notifiedAt: expect.any(String),
+        }),
+      );
+    } finally {
+      reopened.close();
+    }
+  });
+
   it("saves an operational artifact when detail inspection fails", async () => {
     tempDir = mkdtempSync(join(tmpdir(), "supplywatch-cli-"));
     const databasePath = join(tempDir, "supplywatch.sqlite");

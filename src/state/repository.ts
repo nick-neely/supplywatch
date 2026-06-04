@@ -47,6 +47,14 @@ export type EventRecord = {
 
 export type PersistedEventRecord = EventRecord & { id: number };
 
+export type NotificationFailureUpdate = {
+  id: number;
+  attemptCount: number;
+  lastAttemptAt: string;
+  notificationError: string;
+  failed: boolean;
+};
+
 export type RunStatus = "running" | "completed" | "failed";
 
 export type RunRecord = {
@@ -260,6 +268,64 @@ export class WatcherStateRepository {
       .get(eventHash);
 
     return row ? mapEventRow(row) : null;
+  }
+
+  listPendingNotificationEvents(): PersistedEventRecord[] {
+    return this.#database
+      .prepare<[], EventRow>(`
+        SELECT *
+        FROM events
+        WHERE notification_status = 'pending'
+        ORDER BY created_at ASC, id ASC
+      `)
+      .all()
+      .map(mapEventRow);
+  }
+
+  markNotificationDryRun(id: number, notifiedAt: string): void {
+    this.#database
+      .prepare(`
+        UPDATE events
+        SET
+          notification_status = 'dry_run',
+          notification_error = NULL,
+          notified_at = @notifiedAt
+        WHERE id = @id
+      `)
+      .run({ id, notifiedAt });
+  }
+
+  markNotificationSent(id: number, notifiedAt: string): void {
+    this.#database
+      .prepare(`
+        UPDATE events
+        SET
+          notification_status = 'sent',
+          notification_error = NULL,
+          notified_at = @notifiedAt
+        WHERE id = @id
+      `)
+      .run({ id, notifiedAt });
+  }
+
+  recordNotificationFailure(update: NotificationFailureUpdate): void {
+    this.#database
+      .prepare(`
+        UPDATE events
+        SET
+          notification_status = @notificationStatus,
+          attempt_count = @attemptCount,
+          last_attempt_at = @lastAttemptAt,
+          notification_error = @notificationError
+        WHERE id = @id
+      `)
+      .run({
+        id: update.id,
+        attemptCount: update.attemptCount,
+        lastAttemptAt: update.lastAttemptAt,
+        notificationError: update.notificationError,
+        notificationStatus: update.failed ? "failed" : "pending",
+      });
   }
 
   startRun(startedAt: string): RunRecord {

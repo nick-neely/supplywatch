@@ -17,6 +17,11 @@ import {
   captureProductStateFixture,
 } from "./fixtures/capture.js";
 import {
+  type DiscordWebhookSender,
+  dispatchPendingNotifications,
+  sendDiscordWebhook,
+} from "./notifications/discord.js";
+import {
   type OpenStateRepository,
   openStateRepository,
 } from "./state/database.js";
@@ -40,6 +45,7 @@ interface CliDependencies {
   poll: (
     options: ProductDiscoveryPollOptions,
   ) => Promise<ProductDiscoveryPollResult>;
+  sendDiscordWebhook: DiscordWebhookSender;
 }
 
 type DebugArtifact = {
@@ -59,6 +65,7 @@ const defaultDependencies: CliDependencies = {
   inspect: inspectDiscoveredProduct,
   saveDebugArtifact,
   poll: pollRenderedSupplyPage,
+  sendDiscordWebhook,
 };
 
 function readOption(args: string[], name: string): string | undefined {
@@ -136,6 +143,15 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
   const run = state.repository.startRun(new Date().toISOString());
 
   try {
+    await dispatchPendingNotifications(state.repository, {
+      dryRun: config.DRY_RUN,
+      webhookUrl: config.DISCORD_WEBHOOK_URL,
+      now: new Date().toISOString(),
+      maxAttempts: config.NOTIFY_MAX_ATTEMPTS,
+      send: dependencies.sendDiscordWebhook,
+      log: dependencies.log,
+    });
+
     const discovery = await dependencies.poll({
       targetUrl: config.SUPPLYWATCH_TARGET_URL,
       observationWindowMs: config.OBSERVATION_WINDOW_SECONDS * 1000,
@@ -180,6 +196,22 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
     }
 
     logDryRunSummary(dependencies, discovery.products, inspections, diffs);
+
+    const notificationResult = await dispatchPendingNotifications(
+      state.repository,
+      {
+        dryRun: config.DRY_RUN,
+        webhookUrl: config.DISCORD_WEBHOOK_URL,
+        now: new Date().toISOString(),
+        maxAttempts: config.NOTIFY_MAX_ATTEMPTS,
+        send: dependencies.sendDiscordWebhook,
+        log: dependencies.log,
+      },
+    );
+
+    dependencies.log(`Discord sends: ${notificationResult.sent}`);
+    dependencies.log(`Discord dry-run alerts: ${notificationResult.dryRun}`);
+    dependencies.log(`Discord failed alerts: ${notificationResult.failed}`);
 
     state.repository.finishRun(run.id, {
       finishedAt: new Date().toISOString(),

@@ -370,6 +370,8 @@ function publicPurchasePayload(
     price: current.price,
     availableSizes: current.availableSizes,
     confidence: input.inspection?.confidence ?? "low",
+    actionEvidence: input.inspection?.actionEvidence ?? [],
+    detectors: input.inspection?.detectors ?? [],
     evidence: input.inspection?.evidence ?? [],
     previousBuyableState: existing?.buyableState ?? null,
     currentBuyableState: current.buyableState,
