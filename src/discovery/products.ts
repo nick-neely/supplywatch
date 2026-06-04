@@ -12,6 +12,7 @@ export type DiscoveredProduct = {
   stableId: string;
   name: string | null;
   url: string | null;
+  sourcePageUrl?: string;
   imageUrl: string | null;
   description: string | null;
   collection: string | null;
@@ -157,6 +158,7 @@ function buildDiscoveredProduct(
   return {
     stableId,
     ...fields,
+    sourcePageUrl: options.pageUrl,
     normalizedSnapshot,
     rawFingerprint: fingerprintSnapshot(normalizedSnapshot),
   };
@@ -171,6 +173,7 @@ function normalizeSnapshot(
     stableId,
     name: fields.name,
     url: fields.url,
+    sourcePageUrl: options.pageUrl,
     imageUrl: fields.imageUrl,
     description: fields.description,
     collection: fields.collection,

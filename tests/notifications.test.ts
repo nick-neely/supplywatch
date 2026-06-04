@@ -182,7 +182,7 @@ describe("renderDiscordWebhookPayload", () => {
 });
 
 describe("dispatchPendingNotifications", () => {
-  it("records dry-run merch alerts without calling Discord", async () => {
+  it("previews dry-run merch alerts without consuming pending notification state", async () => {
     const state = repository();
     const event = state.recordEvent(MERCH_EVENT);
     const send = vi.fn();
@@ -209,11 +209,38 @@ describe("dispatchPendingNotifications", () => {
     );
     expect(state.getEventByHash(event.eventHash)).toEqual(
       expect.objectContaining({
-        notificationStatus: "dry_run",
+        notificationStatus: "pending",
         attemptCount: 0,
         lastAttemptAt: null,
         notificationError: null,
-        notifiedAt: NOW,
+        notifiedAt: null,
+      }),
+    );
+  });
+
+  it("sends legacy dry-run merch alerts when Discord is later enabled", async () => {
+    const state = repository();
+    const event = state.recordEvent({
+      ...MERCH_EVENT,
+      notificationStatus: "dry_run",
+      notifiedAt: NOW,
+    });
+    const send = vi.fn().mockResolvedValue(undefined);
+
+    const result = await dispatchPendingNotifications(state, {
+      dryRun: false,
+      webhookUrl: "https://discord.com/api/webhooks/example",
+      now: "2026-06-04T15:10:00.000Z",
+      maxAttempts: 10,
+      send,
+    });
+
+    expect(result.sent).toBe(1);
+    expect(send).toHaveBeenCalledOnce();
+    expect(state.getEventByHash(event.eventHash)).toEqual(
+      expect.objectContaining({
+        notificationStatus: "sent",
+        notifiedAt: "2026-06-04T15:10:00.000Z",
       }),
     );
   });

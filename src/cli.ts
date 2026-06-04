@@ -6,6 +6,7 @@ import { loadConfig, redactConfig } from "./config/env.js";
 import {
   type DetailInspectionResult,
   inspectProductDetail,
+  openProductDetailFromListing,
 } from "./detail/inspection.js";
 import {
   type ProductDiscoveryPollOptions,
@@ -64,6 +65,11 @@ type DebugArtifact = {
   inspection: DetailInspectionResult | null;
   errorMessage: string | null;
   capturedAt: string;
+};
+
+type ProductInspectionAttempt = {
+  inspection: DetailInspectionResult | null;
+  errorMessage: string | null;
 };
 
 type HealthEventInput = {
@@ -126,21 +132,23 @@ async function inspectProductForRun(
   product: DiscoveredProduct,
   artifactDirectory: string,
   capturedAt: string,
-): Promise<DetailInspectionResult | null> {
+): Promise<ProductInspectionAttempt> {
   let inspection: DetailInspectionResult | null = null;
 
   try {
     inspection = await dependencies.inspect(product);
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
     await dependencies.saveDebugArtifact({
       directory: artifactDirectory,
       reason: "inspection-error",
       product,
       inspection: null,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorMessage,
       capturedAt,
     });
-    throw error;
+    return { inspection: null, errorMessage };
   }
 
   if (inspection?.buyable) {
@@ -154,7 +162,7 @@ async function inspectProductForRun(
     });
   }
 
-  return inspection;
+  return { inspection, errorMessage: null };
 }
 
 async function runPollCycle(
@@ -199,14 +207,15 @@ async function runPollCycle(
         override,
         fullSweep: options.fullSweep,
       });
-      const inspection = shouldInspect
+      const inspectionAttempt = shouldInspect
         ? await inspectProductForRun(
             dependencies,
             product,
             debugArtifactDirectory,
             observedAt,
           )
-        : null;
+        : { inspection: null, errorMessage: null };
+      const inspection = inspectionAttempt.inspection;
       const diff = diffProductSnapshot(state.repository, {
         product,
         inspection,
@@ -229,6 +238,17 @@ async function runPollCycle(
             productId: product.stableId,
           });
         }
+      }
+
+      if (inspectionAttempt.errorMessage) {
+        recordHealthEvent(state.repository, {
+          eventType: "health_detail_inspection_failed",
+          observedAt,
+          title: "Supplywatch detail inspection failed",
+          description: inspectionAttempt.errorMessage,
+          scope: "detail-inspection",
+          productId: product.stableId,
+        });
       }
 
       if (!product.name || !product.imageUrl) {
@@ -411,7 +431,7 @@ function notificationDispatchOptions(
 async function inspectDiscoveredProduct(
   product: DiscoveredProduct,
 ): Promise<DetailInspectionResult | null> {
-  if (!product.url) {
+  if (!product.url && !product.sourcePageUrl) {
     return null;
   }
 
@@ -419,6 +439,11 @@ async function inspectDiscoveredProduct(
 
   try {
     const page = await browser.newPage();
+
+    if (!product.url) {
+      await openProductDetailFromListing(page, product);
+    }
+
     return await inspectProductDetail(page, product);
   } finally {
     await browser.close();

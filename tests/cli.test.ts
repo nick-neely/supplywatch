@@ -510,7 +510,7 @@ describe("runCli", () => {
       expect(event).toEqual(
         expect.objectContaining({
           product_id: null,
-          notification_status: "dry_run",
+          notification_status: "pending",
         }),
       );
     } finally {
@@ -518,7 +518,7 @@ describe("runCli", () => {
     }
   });
 
-  it("saves an operational artifact when detail inspection fails", async () => {
+  it("saves an operational artifact and health event when detail inspection fails", async () => {
     tempDir = mkdtempSync(join(tmpdir(), "supplywatch-cli-"));
     const databasePath = join(tempDir, "supplywatch.sqlite");
     const inspectionError = new Error("detail modal did not open");
@@ -528,25 +528,23 @@ describe("runCli", () => {
     });
     const saveDebugArtifact = vi.fn().mockResolvedValue(undefined);
 
-    await expect(
-      runCli(["poll-once"], {
-        loadConfig: () => ({
-          SUPPLYWATCH_TARGET_URL: "https://supplyco.openai.com",
-          DATABASE_PATH: databasePath,
-          DRY_RUN: true,
-          DISCORD_WEBHOOK_URL: undefined,
-          POLL_INTERVAL_SECONDS: 60,
-          OBSERVATION_WINDOW_SECONDS: 15,
-          FULL_SWEEP_INTERVAL_MINUTES: 60,
-          OUT_OF_STOCK_RETIRE_CONFIRMATIONS: 3,
-          NOTIFY_MAX_ATTEMPTS: 10,
-        }),
-        log: vi.fn(),
-        poll,
-        inspect: vi.fn().mockRejectedValue(inspectionError),
-        saveDebugArtifact,
+    await runCli(["poll-once"], {
+      loadConfig: () => ({
+        SUPPLYWATCH_TARGET_URL: "https://supplyco.openai.com",
+        DATABASE_PATH: databasePath,
+        DRY_RUN: true,
+        DISCORD_WEBHOOK_URL: undefined,
+        POLL_INTERVAL_SECONDS: 60,
+        OBSERVATION_WINDOW_SECONDS: 15,
+        FULL_SWEEP_INTERVAL_MINUTES: 60,
+        OUT_OF_STOCK_RETIRE_CONFIRMATIONS: 3,
+        NOTIFY_MAX_ATTEMPTS: 10,
       }),
-    ).rejects.toThrow("detail modal did not open");
+      log: vi.fn(),
+      poll,
+      inspect: vi.fn().mockRejectedValue(inspectionError),
+      saveDebugArtifact,
+    });
 
     expect(saveDebugArtifact).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -557,5 +555,21 @@ describe("runCli", () => {
         errorMessage: "detail modal did not open",
       }),
     );
+
+    const state = openStateRepository(databasePath);
+    try {
+      const event = state.database
+        .prepare("SELECT * FROM events WHERE event_type = ?")
+        .get("health_detail_inspection_failed");
+
+      expect(event).toEqual(
+        expect.objectContaining({
+          product_id: DISCOVERED_PRODUCT.stableId,
+          notification_status: "pending",
+        }),
+      );
+    } finally {
+      state.close();
+    }
   });
 });

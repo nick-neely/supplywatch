@@ -77,6 +77,14 @@ export async function dispatchPendingNotifications(
       continue;
     }
 
+    const payload = renderDiscordWebhookPayload(event);
+
+    if (options.dryRun) {
+      options.log?.(JSON.stringify(payload));
+      result.dryRun += 1;
+      continue;
+    }
+
     if (retryWindowExpired(event, options.now, retryWindowMs)) {
       recordFailedNotification(
         repository,
@@ -100,15 +108,6 @@ export async function dispatchPendingNotifications(
         true,
       );
       result.failed += 1;
-      continue;
-    }
-
-    const payload = renderDiscordWebhookPayload(event);
-
-    if (options.dryRun) {
-      options.log?.(JSON.stringify(payload));
-      repository.markNotificationDryRun(event.id, options.now);
-      result.dryRun += 1;
       continue;
     }
 

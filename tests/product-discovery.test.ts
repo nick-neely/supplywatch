@@ -24,6 +24,7 @@ describe("product discovery", () => {
       stableId: "url-products-public-drop-tee",
       name: "Public Drop Tee",
       url: "https://supplyco.openai.com/products/public-drop-tee",
+      sourcePageUrl: "https://supplyco.openai.com/collections/all?cacheBust=1",
       imageUrl: "https://cdn.example/public-drop-tee.png",
       description: "Soft launch shirt",
       collection: "Apparel",
@@ -86,6 +87,7 @@ describe("product discovery", () => {
     expect(product.stableId).toBe(
       "content-desk-plate-https-cdn-example-desk-plate-png",
     );
+    expect(product.sourcePageUrl).toBe("https://supplyco.openai.com");
     expect(product.candidateEvidence).toContainEqual(
       expect.objectContaining({
         signal: "wiggle",

@@ -275,7 +275,7 @@ export class WatcherStateRepository {
       .prepare<[], EventRow>(`
         SELECT *
         FROM events
-        WHERE notification_status = 'pending'
+        WHERE notification_status IN ('pending', 'dry_run')
         ORDER BY created_at ASC, id ASC
       `)
       .all()

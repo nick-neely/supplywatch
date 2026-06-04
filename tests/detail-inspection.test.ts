@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   inspectProductDetail,
   inspectProductDetailHtml,
+  openProductDetailFromListing,
 } from "../src/detail/inspection.js";
 import type { DiscoveredProduct } from "../src/discovery/products.js";
 import { loadProductStateFixture } from "../src/fixtures/load.js";
@@ -10,6 +11,7 @@ const PRODUCT: DiscoveredProduct = {
   stableId: "url-products-sold-through-hoodie",
   name: "Sold Through Hoodie",
   url: "https://supplyco.openai.com/products/sold-through-hoodie",
+  sourcePageUrl: "https://supplyco.openai.com",
   imageUrl: "https://cdn.example/sold-through-hoodie.png",
   description: "A product card discovered on the collection page",
   collection: "Apparel",
@@ -154,5 +156,58 @@ describe("detail inspection", () => {
         },
       ],
     });
+  });
+
+  it("opens URL-less products by clicking a matching card from the source listing page", async () => {
+    const productWithoutUrl = {
+      ...PRODUCT,
+      stableId: "content-sold-through-hoodie",
+      url: null,
+      sourcePageUrl: "https://supplyco.openai.com",
+    };
+    const locator = {
+      filter: vi.fn(),
+      first: vi.fn(),
+      click: vi.fn().mockResolvedValue(undefined),
+    };
+    locator.filter.mockReturnValue(locator);
+    locator.first.mockReturnValue(locator);
+    const page = {
+      goto: vi.fn().mockResolvedValue(undefined),
+      getByAltText: vi.fn().mockReturnValue(locator),
+      locator: vi.fn().mockReturnValue(locator),
+      waitForTimeout: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await openProductDetailFromListing(page, productWithoutUrl);
+
+    expect(page.goto).toHaveBeenCalledWith("https://supplyco.openai.com", {
+      waitUntil: "networkidle",
+    });
+    expect(page.getByAltText).toHaveBeenCalledWith("Sold Through Hoodie", {
+      exact: true,
+    });
+    expect(locator.click).toHaveBeenCalledWith({ timeout: 5000 });
+    expect(page.waitForTimeout).toHaveBeenCalledWith(500);
+  });
+
+  it("fails URL-less detail inspection when no matching product card can be clicked", async () => {
+    const productWithoutUrl = {
+      ...PRODUCT,
+      stableId: "content-missing-card",
+      name: null,
+      url: null,
+      sourcePageUrl: "https://supplyco.openai.com",
+    };
+    const page = {
+      goto: vi.fn().mockResolvedValue(undefined),
+      getByAltText: vi.fn(),
+      locator: vi.fn(),
+      waitForTimeout: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      openProductDetailFromListing(page, productWithoutUrl),
+    ).rejects.toThrow("Could not find clickable product card");
   });
 });

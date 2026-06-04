@@ -43,9 +43,50 @@ export type ProductDetailPage = {
   click?: (selector: string) => Promise<unknown>;
 };
 
+export type ProductListingPage = {
+  goto: (
+    url: string,
+    options: { waitUntil: "networkidle" },
+  ) => Promise<unknown>;
+  getByAltText: (
+    text: string,
+    options: { exact: boolean },
+  ) => ProductListingLocator;
+  locator: (selector: string) => ProductListingLocator;
+  waitForTimeout: (milliseconds: number) => Promise<void>;
+};
+
+export type ProductListingLocator = {
+  filter: (options: { hasText: string | RegExp }) => ProductListingLocator;
+  first: () => ProductListingLocator;
+  click: (options: { timeout: number }) => Promise<unknown>;
+};
+
 const ACTION_SELECTOR = "button, a[href], [role='button']";
 const SIZE_SELECTOR = "[data-size], button";
 const SIZE_TEXT = /^(xs|s|m|l|xl|xxl|\d+)$/i;
+const PRODUCT_CARD_SELECTOR =
+  "article, li, button, [role='button'], [class*='product'], [class*='card']";
+
+export async function openProductDetailFromListing(
+  page: ProductListingPage,
+  product: DiscoveredProduct,
+): Promise<void> {
+  if (!product.sourcePageUrl) {
+    throw new Error(`Product ${product.stableId} has no source page URL`);
+  }
+
+  await page.goto(product.sourcePageUrl, { waitUntil: "networkidle" });
+
+  if (!product.name) {
+    throw new Error(
+      `Could not find clickable product card for ${product.stableId}`,
+    );
+  }
+
+  await clickFirstMatchingProductLocator(page, product.name);
+  await page.waitForTimeout(500);
+}
 
 export async function inspectProductDetail(
   page: ProductDetailPage,
@@ -151,4 +192,29 @@ function normalizeWhitespace(value: string): string {
 
 function sizeSelector(label: string): string {
   return `[data-size='${label.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}']`;
+}
+
+async function clickFirstMatchingProductLocator(
+  page: ProductListingPage,
+  productName: string,
+): Promise<void> {
+  const errors: unknown[] = [];
+  const locators = [
+    page.getByAltText(productName, { exact: true }).first(),
+    page
+      .locator(PRODUCT_CARD_SELECTOR)
+      .filter({ hasText: productName })
+      .first(),
+  ];
+
+  for (const locator of locators) {
+    try {
+      await locator.click({ timeout: 5_000 });
+      return;
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  throw errors[errors.length - 1] ?? new Error("No matching product locator");
 }
