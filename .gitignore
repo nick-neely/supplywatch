@@ -9,3 +9,14 @@ playwright-report/
 test-results/
 *.log
 .cursor/hooks/state/
+
+# dependencies
+/node_modules
+.pnpm-store/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
