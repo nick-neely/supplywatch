@@ -163,6 +163,12 @@ describe("runCli", () => {
       expect.stringContaining("detail checks skipped: 0"),
     );
     expect(log).toHaveBeenCalledWith(
+      expect.stringContaining("events recorded: 2"),
+    );
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining("would-notify events: 1"),
+    );
+    expect(log).toHaveBeenCalledWith(
       expect.stringContaining("Discord sends: 0"),
     );
     expect(saveDebugArtifact).toHaveBeenCalledWith(
@@ -196,6 +202,77 @@ describe("runCli", () => {
     } finally {
       state.close();
     }
+  });
+
+  it("keeps retired products on card observation without inspecting unchanged details", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "supplywatch-cli-"));
+    const databasePath = join(tempDir, "supplywatch.sqlite");
+    const unchangedRetiredProduct = {
+      ...DISCOVERED_PRODUCT,
+      candidateEvidence: [],
+      normalizedSnapshot: {
+        ...DISCOVERED_PRODUCT.normalizedSnapshot,
+        candidateSignals: [],
+        cardEvidence: [],
+      },
+    };
+    const state = openStateRepository(databasePath);
+    try {
+      state.repository.upsertProduct({
+        stableId: unchangedRetiredProduct.stableId,
+        name: unchangedRetiredProduct.name,
+        url: unchangedRetiredProduct.url,
+        imageUrl: unchangedRetiredProduct.imageUrl,
+        description: unchangedRetiredProduct.description,
+        collection: unchangedRetiredProduct.collection,
+        price: unchangedRetiredProduct.price,
+        normalizedSnapshot: unchangedRetiredProduct.normalizedSnapshot,
+        rawFingerprint: unchangedRetiredProduct.rawFingerprint,
+        buyableState: "out_of_stock",
+        availableSizes: [],
+        firstSeenAt: "2026-06-04T14:00:00.000Z",
+        lastSeenAt: "2026-06-04T14:05:00.000Z",
+        firstPublicAt: null,
+        outOfStockConfirmations: 3,
+        retiredAt: "2026-06-04T14:05:00.000Z",
+        retirementReason: "three_out_of_stock_confirmations",
+      });
+    } finally {
+      state.close();
+    }
+    const poll = vi.fn().mockResolvedValue({
+      products: [unchangedRetiredProduct],
+      observedWindowMs: 15_000,
+    });
+    const inspect = vi.fn();
+    const log = vi.fn();
+
+    await runCli([], {
+      loadConfig: () => ({
+        SUPPLYWATCH_TARGET_URL: "https://supplyco.openai.com",
+        DATABASE_PATH: databasePath,
+        DRY_RUN: true,
+        DISCORD_WEBHOOK_URL: undefined,
+        POLL_INTERVAL_SECONDS: 60,
+        OBSERVATION_WINDOW_SECONDS: 15,
+        FULL_SWEEP_INTERVAL_MINUTES: 60,
+        OUT_OF_STOCK_RETIRE_CONFIRMATIONS: 3,
+        NOTIFY_MAX_ATTEMPTS: 10,
+      }),
+      log,
+      poll,
+      inspect,
+      saveDebugArtifact: vi.fn().mockResolvedValue(undefined),
+    });
+
+    expect(inspect).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("inspected: 0"));
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining("detail checks skipped: 1"),
+    );
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining("retired detail checks: 1"),
+    );
   });
 
   it("saves an operational artifact when detail inspection fails", async () => {

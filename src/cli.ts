@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { chromium } from "playwright";
@@ -21,7 +20,11 @@ import {
   type OpenStateRepository,
   openStateRepository,
 } from "./state/database.js";
-import type { ProductRecord } from "./state/repository.js";
+import {
+  diffProductSnapshot,
+  type ProductSnapshotDiffResult,
+  shouldInspectProductSnapshot,
+} from "./state/diff.js";
 
 interface CliDependencies {
   capture: (options: CaptureProductStateFixtureOptions) => Promise<{
@@ -143,26 +146,40 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
       "debug-artifacts",
     );
     const inspections = new Map<string, DetailInspectionResult>();
+    const diffs: ProductSnapshotDiffResult[] = [];
 
     for (const product of discovery.products) {
       const existing = state.repository.getProduct(product.stableId);
-      const inspection = await inspectProductForRun(
-        dependencies,
+      const override = state.repository.getProductOverride(product.stableId);
+      const shouldInspect = shouldInspectProductSnapshot({
         product,
-        debugArtifactDirectory,
+        existing,
+        override,
+      });
+      const inspection = shouldInspect
+        ? await inspectProductForRun(
+            dependencies,
+            product,
+            debugArtifactDirectory,
+            observedAt,
+          )
+        : null;
+      const diff = diffProductSnapshot(state.repository, {
+        product,
+        inspection,
         observedAt,
-      );
-
-      state.repository.upsertProduct(
-        productObservationRecord(product, existing, observedAt, inspection),
-      );
+        retireAfterOutOfStockConfirmations:
+          config.OUT_OF_STOCK_RETIRE_CONFIRMATIONS,
+      });
 
       if (inspection) {
         inspections.set(product.stableId, inspection);
       }
+
+      diffs.push(diff);
     }
 
-    logDryRunSummary(dependencies, discovery.products, inspections);
+    logDryRunSummary(dependencies, discovery.products, inspections, diffs);
 
     state.repository.finishRun(run.id, {
       finishedAt: new Date().toISOString(),
@@ -181,40 +198,6 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
   } finally {
     state.close();
   }
-}
-
-function productObservationRecord(
-  product: DiscoveredProduct,
-  existing: ProductRecord | null,
-  observedAt: string,
-  inspection: DetailInspectionResult | null,
-): ProductRecord {
-  const normalizedSnapshot = normalizedProductSnapshot(product, inspection);
-  const buyableState = buyableStateFromInspection(inspection, existing);
-  const isFirstPublicObservation =
-    buyableState === "publicly_buyable" && !existing?.firstPublicAt;
-
-  return {
-    stableId: product.stableId,
-    name: product.name,
-    url: product.url,
-    imageUrl: product.imageUrl,
-    description: product.description,
-    collection: product.collection,
-    price: product.price,
-    normalizedSnapshot,
-    rawFingerprint: fingerprintSnapshot(normalizedSnapshot),
-    buyableState,
-    availableSizes:
-      inspection?.availableSizes ?? existing?.availableSizes ?? [],
-    firstSeenAt: existing?.firstSeenAt ?? observedAt,
-    lastSeenAt: observedAt,
-    firstPublicAt:
-      existing?.firstPublicAt ?? (isFirstPublicObservation ? observedAt : null),
-    outOfStockConfirmations: existing?.outOfStockConfirmations ?? 0,
-    retiredAt: existing?.retiredAt ?? null,
-    retirementReason: existing?.retirementReason ?? null,
-  };
 }
 
 async function inspectDiscoveredProduct(
@@ -253,6 +236,7 @@ function logDryRunSummary(
   dependencies: Pick<CliDependencies, "log">,
   products: DiscoveredProduct[],
   inspections: Map<string, DetailInspectionResult>,
+  diffs: ProductSnapshotDiffResult[],
 ): void {
   const inspectedCount = inspections.size;
   const confirmedPublicAvailabilityCount = Array.from(
@@ -266,6 +250,13 @@ function logDryRunSummary(
       ),
     ),
   );
+  const events = diffs.flatMap((diff) => diff.events);
+  const merchEventCount = events.filter(
+    (event) => event.payload.alertKind === "merch",
+  ).length;
+  const retiredDetailCheckCount = diffs.filter(
+    (diff) => diff.product.retiredAt,
+  ).length;
 
   dependencies.log("dry-run product discovery summary");
   dependencies.log(`products found: ${products.length}`);
@@ -278,76 +269,10 @@ function logDryRunSummary(
     `confirmed public availability: ${confirmedPublicAvailabilityCount}`,
   );
   dependencies.log(`detail checks skipped: ${skippedDetailCheckCount}`);
-  dependencies.log("retired detail checks: 0");
+  dependencies.log(`retired detail checks: ${retiredDetailCheckCount}`);
+  dependencies.log(`events recorded: ${events.length}`);
+  dependencies.log(`would-notify events: ${merchEventCount}`);
   dependencies.log("Discord sends: 0");
-}
-
-function normalizedProductSnapshot(
-  product: DiscoveredProduct,
-  inspection: DetailInspectionResult | null,
-): ProductRecord["normalizedSnapshot"] {
-  if (!inspection) {
-    return product.normalizedSnapshot;
-  }
-
-  return {
-    ...product.normalizedSnapshot,
-    detail: {
-      buyable: inspection.buyable,
-      confidence: inspection.confidence,
-      availableSizes: inspection.availableSizes,
-      disabledSizes: inspection.disabledSizes,
-      actionEvidence: inspection.actionEvidence,
-      detailText: inspection.detailText,
-      evidence: inspection.evidence,
-      productUrl: inspection.productUrl,
-    },
-  };
-}
-
-function buyableStateFromInspection(
-  inspection: DetailInspectionResult | null,
-  existing: ProductRecord | null,
-): ProductRecord["buyableState"] {
-  if (!inspection) {
-    return existing?.buyableState ?? "unknown";
-  }
-
-  if (inspection.buyable) {
-    return "publicly_buyable";
-  }
-
-  const hasEmployeeGate = inspection.detectors.some(
-    (detector) => detector.name === "employee-gated" && detector.matched,
-  );
-
-  return hasEmployeeGate ? "employee_only" : "out_of_stock";
-}
-
-function fingerprintSnapshot(
-  snapshot: ProductRecord["normalizedSnapshot"],
-): string {
-  const { observedAt: _observedAt, ...stableSnapshot } = snapshot;
-
-  return createHash("sha256").update(stableJson(stableSnapshot)).digest("hex");
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(stableJson).join(",")}]`;
-  }
-
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(
-        ([key, entryValue]) =>
-          `${JSON.stringify(key)}:${stableJson(entryValue)}`,
-      )
-      .join(",")}}`;
-  }
-
-  return JSON.stringify(value);
 }
 
 function safeFilePart(value: string): string {
