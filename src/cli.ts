@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { chromium } from "playwright";
@@ -32,6 +33,7 @@ import {
   type ProductSnapshotDiffResult,
   shouldInspectProductSnapshot,
 } from "./state/diff.js";
+import type { EventRecord } from "./state/repository.js";
 
 interface CliDependencies {
   capture: (options: CaptureProductStateFixtureOptions) => Promise<{
@@ -48,6 +50,9 @@ interface CliDependencies {
     options: ProductDiscoveryPollOptions,
   ) => Promise<ProductDiscoveryPollResult>;
   sendDiscordWebhook: DiscordWebhookSender;
+  sleep: (milliseconds: number) => Promise<void>;
+  shouldContinue: () => boolean;
+  now: () => Date;
 }
 
 type DebugArtifact = {
@@ -68,6 +73,12 @@ const defaultDependencies: CliDependencies = {
   saveDebugArtifact,
   poll: pollRenderedSupplyPage,
   sendDiscordWebhook,
+  sleep: (milliseconds) =>
+    new Promise((resolve) => {
+      setTimeout(resolve, milliseconds);
+    }),
+  shouldContinue: () => true,
+  now: () => new Date(),
 };
 
 function readOption(args: string[], name: string): string | undefined {
@@ -135,29 +146,40 @@ async function inspectProductForRun(
   return inspection;
 }
 
-async function runWorker(dependencies: CliDependencies): Promise<void> {
+async function runPollCycle(
+  dependencies: CliDependencies,
+  options: { fullSweep: boolean },
+): Promise<void> {
   const config = dependencies.loadConfig();
 
-  dependencies.log("supplywatch worker starting");
-  dependencies.log(JSON.stringify(redactConfig(config), null, 2));
-
   const state = dependencies.openStateRepository(config.DATABASE_PATH);
-  const run = state.repository.startRun(new Date().toISOString());
+  const run = state.repository.startRun(dependencies.now().toISOString());
 
   try {
-    await dispatchNotificationsForRun(state.repository, config, dependencies);
-
     const discovery = await dependencies.poll({
       targetUrl: config.SUPPLYWATCH_TARGET_URL,
       observationWindowMs: config.OBSERVATION_WINDOW_SECONDS * 1000,
+      fullSweep: options.fullSweep,
     });
-    const observedAt = new Date().toISOString();
+    const observedAt = dependencies.now().toISOString();
     const debugArtifactDirectory = join(
       dirname(config.DATABASE_PATH),
       "debug-artifacts",
     );
     const inspections = new Map<string, DetailInspectionResult>();
     const diffs: ProductSnapshotDiffResult[] = [];
+
+    if (discovery.products.length === 0) {
+      state.repository.recordEvent(
+        buildHealthEvent({
+          eventType: "health_zero_product_run",
+          observedAt,
+          title: "Supplywatch zero-product run",
+          description: "Rendered page returned no products.",
+          scope: "discovery",
+        }),
+      );
+    }
 
     for (const product of discovery.products) {
       const existing = state.repository.getProduct(product.stableId);
@@ -166,6 +188,7 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
         product,
         existing,
         override,
+        fullSweep: options.fullSweep,
       });
       const inspection = shouldInspect
         ? await inspectProductForRun(
@@ -185,6 +208,34 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
 
       if (inspection) {
         inspections.set(product.stableId, inspection);
+
+        if (inspection.confidence === "low") {
+          state.repository.recordEvent(
+            buildHealthEvent({
+              eventType: "health_low_confidence_classification",
+              observedAt,
+              title: "Supplywatch low-confidence classification",
+              description:
+                "Product detail inspection completed with low confidence.",
+              scope: "detail-inspection",
+              productId: product.stableId,
+            }),
+          );
+        }
+      }
+
+      if (!product.name || !product.imageUrl) {
+        state.repository.recordEvent(
+          buildHealthEvent({
+            eventType: "health_missing_product_identity",
+            observedAt,
+            title: "Supplywatch missing product identity",
+            description:
+              "A rendered product card is missing a product name or image.",
+            scope: "discovery",
+            productId: product.stableId,
+          }),
+        );
       }
 
       diffs.push(diff);
@@ -203,14 +254,24 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
     dependencies.log(`Discord failed alerts: ${notificationResult.failed}`);
 
     state.repository.finishRun(run.id, {
-      finishedAt: new Date().toISOString(),
+      finishedAt: dependencies.now().toISOString(),
       status: "completed",
       productCount: discovery.products.length,
       errorMessage: null,
     });
   } catch (error) {
+    const finishedAt = dependencies.now().toISOString();
+    state.repository.recordEvent(
+      buildHealthEvent({
+        eventType: "health_poll_failed",
+        observedAt: finishedAt,
+        title: "Supplywatch poll failed",
+        description: error instanceof Error ? error.message : String(error),
+        scope: "poll",
+      }),
+    );
     state.repository.finishRun(run.id, {
-      finishedAt: new Date().toISOString(),
+      finishedAt,
       status: "failed",
       productCount: 0,
       errorMessage: error instanceof Error ? error.message : String(error),
@@ -218,6 +279,92 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
     throw error;
   } finally {
     state.close();
+  }
+}
+
+function buildHealthEvent(options: {
+  eventType: string;
+  observedAt: string;
+  title: string;
+  description: string;
+  scope: string;
+  productId?: string;
+}): EventRecord {
+  const rateLimitBucket = options.observedAt.slice(0, 13);
+
+  return {
+    eventHash: hash(
+      JSON.stringify({
+        eventType: options.eventType,
+        productId: options.productId ?? null,
+        rateLimitBucket,
+      }),
+    ),
+    eventType: options.eventType,
+    productId: options.productId ?? null,
+    payload: {
+      alertKind: "health",
+      observedAt: options.observedAt,
+      title: options.title,
+      description: options.description,
+      scope: options.scope,
+    },
+    notificationStatus: "pending",
+    attemptCount: 0,
+    lastAttemptAt: null,
+    notificationError: null,
+    createdAt: options.observedAt,
+    notifiedAt: null,
+  };
+}
+
+function hash(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+async function runWorker(dependencies: CliDependencies): Promise<void> {
+  const config = dependencies.loadConfig();
+
+  dependencies.log("supplywatch worker starting");
+  dependencies.log(JSON.stringify(redactConfig(config), null, 2));
+
+  const state = dependencies.openStateRepository(config.DATABASE_PATH);
+  try {
+    await dispatchNotificationsForRun(state.repository, config, dependencies);
+  } finally {
+    state.close();
+  }
+
+  let running = false;
+  let lastFullSweepAt = 0;
+
+  while (dependencies.shouldContinue()) {
+    if (running) {
+      dependencies.log("poll skipped: previous run still in progress");
+    } else {
+      running = true;
+      const now = dependencies.now().getTime();
+      const fullSweepIntervalMs = config.FULL_SWEEP_INTERVAL_MINUTES * 60_000;
+      const fullSweep =
+        lastFullSweepAt === 0 || now - lastFullSweepAt >= fullSweepIntervalMs;
+
+      try {
+        await runPollCycle(dependencies, { fullSweep });
+        if (fullSweep) {
+          lastFullSweepAt = now;
+        }
+      } catch (error) {
+        dependencies.log(
+          `poll failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      } finally {
+        running = false;
+      }
+    }
+
+    if (dependencies.shouldContinue()) {
+      await dependencies.sleep(config.POLL_INTERVAL_SECONDS * 1000);
+    }
   }
 }
 
@@ -336,6 +483,22 @@ export async function runCli(
 
   if (command === "capture-fixture") {
     await runCaptureFixture(commandArgs, dependencies);
+    return;
+  }
+
+  if (command === "poll-once") {
+    const config = dependencies.loadConfig();
+    dependencies.log("supplywatch worker starting");
+    dependencies.log(JSON.stringify(redactConfig(config), null, 2));
+
+    const state = dependencies.openStateRepository(config.DATABASE_PATH);
+    try {
+      await dispatchNotificationsForRun(state.repository, config, dependencies);
+    } finally {
+      state.close();
+    }
+
+    await runPollCycle(dependencies, { fullSweep: false });
     return;
   }
 

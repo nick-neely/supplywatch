@@ -28,6 +28,24 @@ describe("parseConfig", () => {
       }),
     ).toThrow(/DISCORD_WEBHOOK_URL is required/);
   });
+
+  it("rejects aggressive polling overrides", () => {
+    expect(() =>
+      parseConfig({
+        POLL_INTERVAL_SECONDS: "10",
+      }),
+    ).toThrow(/POLL_INTERVAL_SECONDS must be at least 30/);
+    expect(() =>
+      parseConfig({
+        OBSERVATION_WINDOW_SECONDS: "2",
+      }),
+    ).toThrow(/OBSERVATION_WINDOW_SECONDS must be at least 5/);
+    expect(() =>
+      parseConfig({
+        FULL_SWEEP_INTERVAL_MINUTES: "5",
+      }),
+    ).toThrow(/FULL_SWEEP_INTERVAL_MINUTES must be at least 15/);
+  });
 });
 
 describe("redactConfig", () => {

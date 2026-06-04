@@ -7,7 +7,10 @@ const booleanFromString = z
   .default("true")
   .transform((value) => value.toLowerCase() === "true");
 
-const positiveIntegerFromString = (defaultValue: number) =>
+const positiveIntegerFromString = (
+  defaultValue: number,
+  options: { minimum?: number; name?: string } = {},
+) =>
   z
     .string()
     .optional()
@@ -24,7 +27,17 @@ const positiveIntegerFromString = (defaultValue: number) =>
       }
 
       return parsed;
-    });
+    })
+    .pipe(
+      z.number().superRefine((value, context) => {
+        if (options.minimum && value < options.minimum) {
+          context.addIssue({
+            code: "custom",
+            message: `${options.name ?? "value"} must be at least ${options.minimum}`,
+          });
+        }
+      }),
+    );
 
 const envSchema = z
   .object({
@@ -32,9 +45,18 @@ const envSchema = z
     DATABASE_PATH: z.string().min(1).default("./data/supplywatch.sqlite"),
     DRY_RUN: booleanFromString,
     DISCORD_WEBHOOK_URL: z.string().optional(),
-    POLL_INTERVAL_SECONDS: positiveIntegerFromString(60),
-    OBSERVATION_WINDOW_SECONDS: positiveIntegerFromString(15),
-    FULL_SWEEP_INTERVAL_MINUTES: positiveIntegerFromString(60),
+    POLL_INTERVAL_SECONDS: positiveIntegerFromString(60, {
+      minimum: 30,
+      name: "POLL_INTERVAL_SECONDS",
+    }),
+    OBSERVATION_WINDOW_SECONDS: positiveIntegerFromString(15, {
+      minimum: 5,
+      name: "OBSERVATION_WINDOW_SECONDS",
+    }),
+    FULL_SWEEP_INTERVAL_MINUTES: positiveIntegerFromString(60, {
+      minimum: 15,
+      name: "FULL_SWEEP_INTERVAL_MINUTES",
+    }),
     OUT_OF_STOCK_RETIRE_CONFIRMATIONS: positiveIntegerFromString(3),
     NOTIFY_MAX_ATTEMPTS: positiveIntegerFromString(10),
   })

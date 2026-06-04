@@ -28,6 +28,7 @@ export type ProductInspectionDecisionInput = {
   product: DiscoveredProduct;
   existing: ProductRecord | null;
   override: ProductOverride | null;
+  fullSweep?: boolean;
 };
 
 type ProductSnapshotEventType =
@@ -51,6 +52,7 @@ export function shouldInspectProductSnapshot({
   product,
   existing,
   override,
+  fullSweep,
 }: ProductInspectionDecisionInput): boolean {
   if (override?.forceWatched) {
     return true;
@@ -66,6 +68,10 @@ export function shouldInspectProductSnapshot({
 
   if (override?.forceRetired) {
     return false;
+  }
+
+  if (fullSweep) {
+    return true;
   }
 
   return hasStrongCardChange(product, existing);

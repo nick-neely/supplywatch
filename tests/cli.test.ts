@@ -127,7 +127,7 @@ describe("runCli", () => {
     const inspect = vi.fn().mockResolvedValue(PUBLIC_DETAIL_INSPECTION);
     const saveDebugArtifact = vi.fn().mockResolvedValue(undefined);
 
-    await runCli([], {
+    await runCli(["poll-once"], {
       loadConfig: () => ({
         SUPPLYWATCH_TARGET_URL: "https://supplyco.openai.com",
         DATABASE_PATH: databasePath,
@@ -148,6 +148,7 @@ describe("runCli", () => {
     expect(poll).toHaveBeenCalledWith({
       targetUrl: "https://supplyco.openai.com",
       observationWindowMs: 15_000,
+      fullSweep: false,
     });
     expect(log).toHaveBeenCalledWith(
       expect.stringContaining("products found: 1"),
@@ -247,7 +248,7 @@ describe("runCli", () => {
     const inspect = vi.fn();
     const log = vi.fn();
 
-    await runCli([], {
+    await runCli(["poll-once"], {
       loadConfig: () => ({
         SUPPLYWATCH_TARGET_URL: "https://supplyco.openai.com",
         DATABASE_PATH: databasePath,
@@ -331,7 +332,7 @@ describe("runCli", () => {
     }
     const sendDiscordWebhook = vi.fn().mockResolvedValue(undefined);
 
-    await runCli([], {
+    await runCli(["poll-once"], {
       loadConfig: () => ({
         SUPPLYWATCH_TARGET_URL: "https://supplyco.openai.com",
         DATABASE_PATH: databasePath,
@@ -375,6 +376,148 @@ describe("runCli", () => {
     }
   });
 
+  it("runs scheduled polls without overlapping in-progress cycles", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "supplywatch-cli-"));
+    const databasePath = join(tempDir, "supplywatch.sqlite");
+    let continueChecks = 0;
+    let activePolls = 0;
+    let maxActivePolls = 0;
+    const poll = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          activePolls += 1;
+          maxActivePolls = Math.max(maxActivePolls, activePolls);
+          setTimeout(() => {
+            activePolls -= 1;
+            resolve({
+              products: [],
+              observedWindowMs: 15_000,
+            });
+          }, 20);
+        }),
+    );
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await runCli([], {
+      loadConfig: () => ({
+        SUPPLYWATCH_TARGET_URL: "https://supplyco.openai.com",
+        DATABASE_PATH: databasePath,
+        DRY_RUN: true,
+        DISCORD_WEBHOOK_URL: undefined,
+        POLL_INTERVAL_SECONDS: 60,
+        OBSERVATION_WINDOW_SECONDS: 15,
+        FULL_SWEEP_INTERVAL_MINUTES: 60,
+        OUT_OF_STOCK_RETIRE_CONFIRMATIONS: 3,
+        NOTIFY_MAX_ATTEMPTS: 10,
+      }),
+      log: vi.fn(),
+      poll,
+      inspect: vi.fn(),
+      saveDebugArtifact: vi.fn().mockResolvedValue(undefined),
+      sleep,
+      shouldContinue: () => continueChecks++ < 4,
+    });
+
+    expect(poll).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(2);
+    expect(maxActivePolls).toBe(1);
+  });
+
+  it("performs a full sweep at startup and when the configured cadence elapses", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "supplywatch-cli-"));
+    const databasePath = join(tempDir, "supplywatch.sqlite");
+    const times = [
+      new Date("2026-06-04T15:00:00.000Z"),
+      new Date("2026-06-04T15:30:00.000Z"),
+      new Date("2026-06-04T16:00:00.000Z"),
+    ];
+    let nowCalls = 0;
+    const poll = vi.fn().mockResolvedValue({
+      products: [],
+      observedWindowMs: 15_000,
+    });
+    let continueChecks = 0;
+
+    await runCli([], {
+      loadConfig: () => ({
+        SUPPLYWATCH_TARGET_URL: "https://supplyco.openai.com",
+        DATABASE_PATH: databasePath,
+        DRY_RUN: true,
+        DISCORD_WEBHOOK_URL: undefined,
+        POLL_INTERVAL_SECONDS: 60,
+        OBSERVATION_WINDOW_SECONDS: 15,
+        FULL_SWEEP_INTERVAL_MINUTES: 60,
+        OUT_OF_STOCK_RETIRE_CONFIRMATIONS: 3,
+        NOTIFY_MAX_ATTEMPTS: 10,
+      }),
+      log: vi.fn(),
+      poll,
+      inspect: vi.fn(),
+      saveDebugArtifact: vi.fn().mockResolvedValue(undefined),
+      sleep: vi.fn().mockResolvedValue(undefined),
+      shouldContinue: () => continueChecks++ < 5,
+      now: () =>
+        times[Math.min(Math.floor(nowCalls++ / 4), times.length - 1)] ??
+        new Date("2026-06-04T16:00:00.000Z"),
+    });
+
+    expect(poll).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ fullSweep: true }),
+    );
+    expect(poll).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ fullSweep: false }),
+    );
+    expect(poll).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ fullSweep: true }),
+    );
+  });
+
+  it("records a health alert when a successful poll returns zero products", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "supplywatch-cli-"));
+    const databasePath = join(tempDir, "supplywatch.sqlite");
+
+    await runCli(["poll-once"], {
+      loadConfig: () => ({
+        SUPPLYWATCH_TARGET_URL: "https://supplyco.openai.com",
+        DATABASE_PATH: databasePath,
+        DRY_RUN: true,
+        DISCORD_WEBHOOK_URL: undefined,
+        POLL_INTERVAL_SECONDS: 60,
+        OBSERVATION_WINDOW_SECONDS: 15,
+        FULL_SWEEP_INTERVAL_MINUTES: 60,
+        OUT_OF_STOCK_RETIRE_CONFIRMATIONS: 3,
+        NOTIFY_MAX_ATTEMPTS: 10,
+      }),
+      log: vi.fn(),
+      poll: vi.fn().mockResolvedValue({
+        products: [],
+        observedWindowMs: 15_000,
+      }),
+      inspect: vi.fn(),
+      saveDebugArtifact: vi.fn().mockResolvedValue(undefined),
+      now: () => new Date("2026-06-04T15:05:00.000Z"),
+    });
+
+    const state = openStateRepository(databasePath);
+    try {
+      const event = state.database
+        .prepare("SELECT * FROM events WHERE event_type = ?")
+        .get("health_zero_product_run");
+
+      expect(event).toEqual(
+        expect.objectContaining({
+          product_id: null,
+          notification_status: "dry_run",
+        }),
+      );
+    } finally {
+      state.close();
+    }
+  });
+
   it("saves an operational artifact when detail inspection fails", async () => {
     tempDir = mkdtempSync(join(tmpdir(), "supplywatch-cli-"));
     const databasePath = join(tempDir, "supplywatch.sqlite");
@@ -386,7 +529,7 @@ describe("runCli", () => {
     const saveDebugArtifact = vi.fn().mockResolvedValue(undefined);
 
     await expect(
-      runCli([], {
+      runCli(["poll-once"], {
         loadConfig: () => ({
           SUPPLYWATCH_TARGET_URL: "https://supplyco.openai.com",
           DATABASE_PATH: databasePath,

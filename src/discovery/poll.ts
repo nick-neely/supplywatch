@@ -7,6 +7,7 @@ import {
 export type ProductDiscoveryPollOptions = {
   targetUrl: string;
   observationWindowMs: number;
+  fullSweep?: boolean;
 };
 
 export type ProductDiscoveryPollResult = {
