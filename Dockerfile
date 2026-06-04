@@ -16,7 +16,7 @@ RUN pnpm build
 FROM base AS runtime
 ENV NODE_ENV=production
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
+  && apt-get install -y --no-install-recommends ca-certificates g++ make python3 \
   && rm -rf /var/lib/apt/lists/*
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --prod --frozen-lockfile=false
