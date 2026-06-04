@@ -31,11 +31,14 @@ export function classifyAvailability(
   const positiveDetectors = matchedDetectors.filter(
     (detector) => detector.polarity === "positive",
   );
+  const hasPublicPurchaseControl = positiveDetectors.some(
+    (detector) => detector.name === "enabled-public-purchase-control",
+  );
   const decisiveDetectors =
     negativeDetectors.length > 0 ? negativeDetectors : positiveDetectors;
 
   return {
-    buyable: negativeDetectors.length === 0 && positiveDetectors.length > 0,
+    buyable: negativeDetectors.length === 0 && hasPublicPurchaseControl,
     confidence: strongestConfidence(decisiveDetectors, "low"),
     evidence: matchedDetectors.flatMap((detector) => detector.evidence),
     detectors,

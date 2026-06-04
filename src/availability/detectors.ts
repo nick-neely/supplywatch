@@ -13,7 +13,7 @@ const ENABLED_SIZE_SELECTOR =
 const PUBLIC_PURCHASE_CONTROL_TEXT = /\b(add to cart|buy now|purchase)\b/i;
 const DISABLED_PURCHASE_CONTROL_TEXT =
   /\b(add to cart|buy now|purchase|out of stock|sold out|unavailable)\b/i;
-const SIZE_TEXT = /^(xs|s|m|l|xl|xxl|\d+)$|size/i;
+const SIZE_TEXT = /^(xs|s|m|l|xl|xxl|\d+)$/i;
 const UNAVAILABLE_TEXT = /\b(out of stock|sold out|unavailable)\b/i;
 const EMPLOYEE_GATE_TEXT =
   /\b(employee|internal|staff)\b.*\b(log in|login|account|only)\b/i;

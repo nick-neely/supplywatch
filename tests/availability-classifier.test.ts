@@ -64,6 +64,29 @@ describe("availability classification", () => {
     );
   });
 
+  it("does not treat an enabled size alone as publicly buyable", () => {
+    const result = classifyAvailability(
+      detectAvailabilitySignals(`
+        <main>
+          <h1>Variant Tee</h1>
+          <button type="button" data-size="M">M</button>
+          <button type="button" disabled>Select a size</button>
+        </main>
+      `),
+    );
+
+    expect(result).toMatchObject({
+      buyable: false,
+      confidence: "medium",
+    });
+    expect(result.detectors).toContainEqual(
+      expect.objectContaining({
+        name: "enabled-size",
+        matched: true,
+      }),
+    );
+  });
+
   it("prefers negative detail evidence over candidate animation", async () => {
     const fixture = await loadProductStateFixture("out-of-stock");
     const result = classifyAvailability(
