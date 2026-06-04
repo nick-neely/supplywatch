@@ -13,6 +13,7 @@ import {
   type OpenStateRepository,
   openStateRepository,
 } from "./state/database.js";
+import type { ProductRecord } from "./state/repository.js";
 
 interface CliDependencies {
   capture: (options: CaptureProductStateFixtureOptions) => Promise<{
@@ -82,25 +83,9 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
     for (const product of discovery.products) {
       const existing = state.repository.getProduct(product.stableId);
 
-      state.repository.upsertProduct({
-        stableId: product.stableId,
-        name: product.name,
-        url: product.url,
-        imageUrl: product.imageUrl,
-        description: product.description,
-        collection: product.collection,
-        price: product.price,
-        normalizedSnapshot: product.normalizedSnapshot,
-        rawFingerprint: product.rawFingerprint,
-        buyableState: existing?.buyableState ?? "unknown",
-        availableSizes: existing?.availableSizes ?? [],
-        firstSeenAt: existing?.firstSeenAt ?? observedAt,
-        lastSeenAt: observedAt,
-        firstPublicAt: existing?.firstPublicAt ?? null,
-        outOfStockConfirmations: existing?.outOfStockConfirmations ?? 0,
-        retiredAt: existing?.retiredAt ?? null,
-        retirementReason: existing?.retirementReason ?? null,
-      });
+      state.repository.upsertProduct(
+        productObservationRecord(product, existing, observedAt),
+      );
     }
 
     logDryRunSummary(dependencies, discovery.products);
@@ -122,6 +107,32 @@ async function runWorker(dependencies: CliDependencies): Promise<void> {
   } finally {
     state.close();
   }
+}
+
+function productObservationRecord(
+  product: DiscoveredProduct,
+  existing: ProductRecord | null,
+  observedAt: string,
+): ProductRecord {
+  return {
+    stableId: product.stableId,
+    name: product.name,
+    url: product.url,
+    imageUrl: product.imageUrl,
+    description: product.description,
+    collection: product.collection,
+    price: product.price,
+    normalizedSnapshot: product.normalizedSnapshot,
+    rawFingerprint: product.rawFingerprint,
+    buyableState: existing?.buyableState ?? "unknown",
+    availableSizes: existing?.availableSizes ?? [],
+    firstSeenAt: existing?.firstSeenAt ?? observedAt,
+    lastSeenAt: observedAt,
+    firstPublicAt: existing?.firstPublicAt ?? null,
+    outOfStockConfirmations: existing?.outOfStockConfirmations ?? 0,
+    retiredAt: existing?.retiredAt ?? null,
+    retirementReason: existing?.retirementReason ?? null,
+  };
 }
 
 function logDryRunSummary(

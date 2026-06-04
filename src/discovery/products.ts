@@ -31,6 +31,8 @@ type ProductFields = Omit<
   "stableId" | "normalizedSnapshot" | "rawFingerprint"
 >;
 
+type ProductTextFields = Omit<ProductFields, "candidateEvidence">;
+
 type CheerioSelection = ReturnType<cheerio.CheerioAPI>;
 
 const PRODUCT_SELECTORS = [
@@ -58,18 +60,11 @@ export function extractProductCardsFromHtml(
       return;
     }
 
-    const stableId = stableProductId(fields);
-    const normalizedSnapshot = normalizeSnapshot(stableId, fields, options);
-    const product = {
-      stableId,
-      ...fields,
-      normalizedSnapshot,
-      rawFingerprint: fingerprintSnapshot(normalizedSnapshot),
-    };
-    const existing = products.get(stableId);
+    const product = buildDiscoveredProduct(fields, options);
+    const existing = products.get(product.stableId);
 
     products.set(
-      stableId,
+      product.stableId,
       existing ? mergeProducts(existing, product) : product,
     );
   });
@@ -82,6 +77,17 @@ function extractProductFields(
   card: CheerioSelection,
   pageUrl: string,
 ): ProductFields {
+  return {
+    ...extractProductTextFields($, card, pageUrl),
+    candidateEvidence: candidateEvidence($, card),
+  };
+}
+
+function extractProductTextFields(
+  $: cheerio.CheerioAPI,
+  card: CheerioSelection,
+  pageUrl: string,
+): ProductTextFields {
   const href = card.is("a")
     ? card.attr("href")
     : card.find("a[href]").attr("href");
@@ -109,7 +115,6 @@ function extractProductFields(
     description,
     collection,
     price,
-    candidateEvidence: candidateEvidence($, card),
   };
 }
 
@@ -125,16 +130,36 @@ function stableProductId(fields: ProductFields): string {
     return `url-${slugify(pathname)}`;
   }
 
-  const stableFields =
-    fields.name || fields.imageUrl
-      ? [fields.name, fields.imageUrl].filter(Boolean).join(" ")
-      : (fields.description ?? "");
+  const contentIdSource = stableContentIdSource(fields);
 
-  if (fields.name || fields.imageUrl || fields.description) {
-    return `content-${slugify(stableFields)}`;
+  if (contentIdSource) {
+    return `content-${slugify(contentIdSource)}`;
   }
 
   return `hash-${hash(stableJson(fields)).slice(0, 16)}`;
+}
+
+function stableContentIdSource(fields: ProductFields): string | null {
+  if (fields.name || fields.imageUrl) {
+    return [fields.name, fields.imageUrl].filter(Boolean).join(" ");
+  }
+
+  return fields.description;
+}
+
+function buildDiscoveredProduct(
+  fields: ProductFields,
+  options: ProductExtractionOptions,
+): DiscoveredProduct {
+  const stableId = stableProductId(fields);
+  const normalizedSnapshot = normalizeSnapshot(stableId, fields, options);
+
+  return {
+    stableId,
+    ...fields,
+    normalizedSnapshot,
+    rawFingerprint: fingerprintSnapshot(normalizedSnapshot),
+  };
 }
 
 function normalizeSnapshot(
@@ -150,9 +175,7 @@ function normalizeSnapshot(
     description: fields.description,
     collection: fields.collection,
     price: fields.price,
-    candidateSignals: fields.candidateEvidence.map(
-      (evidence) => evidence.signal,
-    ),
+    candidateSignals: candidateSignals(fields.candidateEvidence),
     cardEvidence: fields.candidateEvidence,
     observedAt: options.observedAt,
   };
@@ -221,7 +244,7 @@ function mergeProducts(
   };
   const normalizedSnapshot = {
     ...incoming.normalizedSnapshot,
-    candidateSignals: candidateEvidence.map((evidence) => evidence.signal),
+    candidateSignals: candidateSignals(candidateEvidence),
     cardEvidence: candidateEvidence,
   };
 
@@ -230,6 +253,10 @@ function mergeProducts(
     normalizedSnapshot,
     rawFingerprint: fingerprintSnapshot(normalizedSnapshot),
   };
+}
+
+function candidateSignals(evidence: CandidateEvidence[]): string[] {
+  return evidence.map((item) => item.signal);
 }
 
 function absoluteUrl(
