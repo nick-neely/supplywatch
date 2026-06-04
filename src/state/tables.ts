@@ -1,5 +1,17 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+  BUYABLE_STATES,
+  NOTIFICATION_STATUSES,
+  RUN_STATUSES,
+} from "./types.js";
+
+export const STATE_TABLE_NAMES = [
+  "products",
+  "events",
+  "runs",
+  "product_overrides",
+] as const;
 
 export const products = sqliteTable("products", {
   stableId: text("stable_id").primaryKey(),
@@ -11,7 +23,7 @@ export const products = sqliteTable("products", {
   price: text("price"),
   normalizedSnapshotJson: text("normalized_snapshot_json").notNull(),
   rawFingerprint: text("raw_fingerprint"),
-  buyableState: text("buyable_state").notNull(),
+  buyableState: text("buyable_state", { enum: BUYABLE_STATES }).notNull(),
   availableSizesJson: text("available_sizes_json").notNull().default("[]"),
   firstSeenAt: text("first_seen_at").notNull(),
   lastSeenAt: text("last_seen_at").notNull(),
@@ -35,7 +47,9 @@ export const events = sqliteTable(
       onDelete: "set null",
     }),
     payloadJson: text("payload_json").notNull(),
-    notificationStatus: text("notification_status")
+    notificationStatus: text("notification_status", {
+      enum: NOTIFICATION_STATUSES,
+    })
       .notNull()
       .default("pending"),
     attemptCount: integer("attempt_count").notNull().default(0),
@@ -57,7 +71,7 @@ export const runs = sqliteTable("runs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   startedAt: text("started_at").notNull(),
   finishedAt: text("finished_at"),
-  status: text("status").notNull(),
+  status: text("status", { enum: RUN_STATUSES }).notNull(),
   productCount: integer("product_count").notNull().default(0),
   errorMessage: text("error_message"),
 });

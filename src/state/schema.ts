@@ -1,8 +1,9 @@
 import type Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { STATE_TABLE_NAMES } from "./tables.js";
 
-const STATE_TABLES = ["products", "events", "runs", "product_overrides"];
+const DRIZZLE_MIGRATIONS_TABLE = "__drizzle_migrations";
 const INITIAL_MIGRATION = {
   hash: "592b61dbdbb0ed12fec6147aece3ed959837cc6214117a9befe97e2b1814c493",
   createdAt: 1780593124788,
@@ -19,11 +20,11 @@ export function initializeStateSchema(database: Database.Database): void {
 }
 
 function hasLegacyStateSchema(database: Database.Database): boolean {
-  if (tableExists(database, "__drizzle_migrations")) {
+  if (tableExists(database, DRIZZLE_MIGRATIONS_TABLE)) {
     return false;
   }
 
-  return STATE_TABLES.every((table) => tableExists(database, table));
+  return STATE_TABLE_NAMES.every((table) => tableExists(database, table));
 }
 
 function tableExists(database: Database.Database, tableName: string): boolean {
@@ -38,7 +39,7 @@ function tableExists(database: Database.Database, tableName: string): boolean {
 
 function recordInitialMigration(database: Database.Database): void {
   database.exec(`
-    CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (
+    CREATE TABLE IF NOT EXISTS "${DRIZZLE_MIGRATIONS_TABLE}" (
       id SERIAL PRIMARY KEY,
       hash text NOT NULL,
       created_at numeric

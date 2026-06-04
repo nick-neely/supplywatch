@@ -3,14 +3,11 @@ import { asc, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { initializeStateSchema } from "./schema.js";
 import { events, productOverrides, products, runs } from "./tables.js";
+import type { BuyableState, NotificationStatus, RunStatus } from "./types.js";
+
+export type { BuyableState, NotificationStatus, RunStatus };
 
 export type JsonObject = Record<string, unknown>;
-
-export type BuyableState =
-  | "unknown"
-  | "out_of_stock"
-  | "publicly_buyable"
-  | "employee_only";
 
 export type ProductRecord = {
   stableId: string;
@@ -31,8 +28,6 @@ export type ProductRecord = {
   retiredAt: string | null;
   retirementReason: string | null;
 };
-
-export type NotificationStatus = "pending" | "sent" | "failed" | "dry_run";
 
 export type EventRecord = {
   id?: number;
@@ -57,8 +52,6 @@ export type NotificationFailureUpdate = {
   notificationError: string;
   failed: boolean;
 };
-
-export type RunStatus = "running" | "completed" | "failed";
 
 export type RunRecord = {
   id: number;
@@ -203,22 +196,22 @@ export class WatcherStateRepository {
   }
 
   markNotificationDryRun(id: number, notifiedAt: string): void {
-    this.#db
-      .update(events)
-      .set({
-        notificationStatus: "dry_run",
-        notificationError: null,
-        notifiedAt,
-      })
-      .where(eq(events.id, id))
-      .run();
+    this.#markNotificationResolved(id, "dry_run", notifiedAt);
   }
 
   markNotificationSent(id: number, notifiedAt: string): void {
+    this.#markNotificationResolved(id, "sent", notifiedAt);
+  }
+
+  #markNotificationResolved(
+    id: number,
+    notificationStatus: Extract<NotificationStatus, "dry_run" | "sent">,
+    notifiedAt: string,
+  ): void {
     this.#db
       .update(events)
       .set({
-        notificationStatus: "sent",
+        notificationStatus,
         notificationError: null,
         notifiedAt,
       })
@@ -312,7 +305,7 @@ function mapProductRow(row: ProductRow): ProductRecord {
     price: row.price,
     normalizedSnapshot: JSON.parse(row.normalizedSnapshotJson) as JsonObject,
     rawFingerprint: row.rawFingerprint,
-    buyableState: row.buyableState as BuyableState,
+    buyableState: row.buyableState,
     availableSizes: JSON.parse(row.availableSizesJson) as string[],
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
@@ -330,7 +323,7 @@ function mapEventRow(row: EventRow): PersistedEventRecord {
     eventType: row.eventType,
     productId: row.productId,
     payload: JSON.parse(row.payloadJson) as JsonObject,
-    notificationStatus: row.notificationStatus as NotificationStatus,
+    notificationStatus: row.notificationStatus,
     attemptCount: row.attemptCount,
     lastAttemptAt: row.lastAttemptAt,
     notificationError: row.notificationError,
@@ -344,7 +337,7 @@ function mapRunRow(row: RunRow): RunRecord {
     id: row.id,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
-    status: row.status as RunStatus,
+    status: row.status,
     productCount: row.productCount,
     errorMessage: row.errorMessage,
   };
