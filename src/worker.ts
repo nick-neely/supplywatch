@@ -5,7 +5,9 @@ async function main(): Promise<void> {
 
   console.log("Supplywatch worker starting");
   console.log(JSON.stringify(redactConfig(config), null, 2));
-  console.log("Foundation layer is ready. Scraper and state machine are not implemented yet.");
+  console.log(
+    "Foundation layer is ready. Scraper and state machine are not implemented yet.",
+  );
 }
 
 main().catch((error: unknown) => {

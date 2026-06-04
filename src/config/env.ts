@@ -54,7 +54,9 @@ export function loadConfig(): SupplywatchConfig {
   return envSchema.parse(process.env);
 }
 
-export function redactConfig(config: SupplywatchConfig): Record<string, unknown> {
+export function redactConfig(
+  config: SupplywatchConfig,
+): Record<string, unknown> {
   return {
     ...config,
     DISCORD_WEBHOOK_URL: config.DISCORD_WEBHOOK_URL ? "[redacted]" : undefined,
