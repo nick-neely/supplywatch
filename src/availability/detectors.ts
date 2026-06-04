@@ -1,8 +1,40 @@
 import * as cheerio from "cheerio";
-import type { DetectorResult } from "./types.js";
+import type { DetectorEvidence, DetectorResult } from "./types.js";
 
-function textEvidence(kind: string, message: string, value?: string) {
+const PUBLIC_PURCHASE_CONTROL_SELECTOR =
+  "button:not(:disabled), a[href], [role='button']:not([aria-disabled='true'])";
+const DISABLED_PURCHASE_CONTROL_SELECTOR =
+  "button:disabled, button[aria-disabled='true'], [role='button'][aria-disabled='true']";
+const DISABLED_SIZE_SELECTOR =
+  "[data-size][disabled], [data-size][aria-disabled='true'], button[disabled], button[aria-disabled='true']";
+const ENABLED_SIZE_SELECTOR =
+  "[data-size]:not(:disabled):not([aria-disabled='true']), button:not(:disabled):not([aria-disabled='true'])";
+
+const PUBLIC_PURCHASE_CONTROL_TEXT = /\b(add to cart|buy now|purchase)\b/i;
+const DISABLED_PURCHASE_CONTROL_TEXT =
+  /\b(add to cart|buy now|purchase|out of stock|sold out|unavailable)\b/i;
+const SIZE_TEXT = /^(xs|s|m|l|xl|xxl|\d+)$|size/i;
+const UNAVAILABLE_TEXT = /\b(out of stock|sold out|unavailable)\b/i;
+const EMPLOYEE_GATE_TEXT =
+  /\b(employee|internal|staff)\b.*\b(log in|login|account|only)\b/i;
+
+function textEvidence(
+  kind: string,
+  message: string,
+  value?: string,
+): DetectorEvidence {
   return value ? { kind, message, value } : { kind, message };
+}
+
+function detector(
+  result: Omit<DetectorResult, "evidence"> & {
+    evidence?: DetectorEvidence[];
+  },
+): DetectorResult {
+  return {
+    ...result,
+    evidence: result.evidence ?? [],
+  };
 }
 
 export function detectAvailabilitySignals(html: string): DetectorResult[] {
@@ -10,41 +42,30 @@ export function detectAvailabilitySignals(html: string): DetectorResult[] {
   const bodyText = $("body").text().replace(/\s+/g, " ").trim();
   const animatedElements = $(".animate-wiggle");
   const enabledPublicPurchaseControls = $(
-    "button:not(:disabled), a[href], [role='button']:not([aria-disabled='true'])",
+    PUBLIC_PURCHASE_CONTROL_SELECTOR,
   ).filter((_, element) => {
     const text = $(element).text().trim();
-    return /\b(add to cart|buy now|purchase)\b/i.test(text);
+    return PUBLIC_PURCHASE_CONTROL_TEXT.test(text);
   });
-  const unavailableText = /\b(out of stock|sold out|unavailable)\b/i.exec(
-    bodyText,
+  const unavailableText = UNAVAILABLE_TEXT.exec(bodyText);
+  const disabledPurchaseControls = $(DISABLED_PURCHASE_CONTROL_SELECTOR).filter(
+    (_, element) => {
+      const text = $(element).text().trim();
+      return DISABLED_PURCHASE_CONTROL_TEXT.test(text);
+    },
   );
-  const disabledPurchaseControls = $(
-    "button:disabled, button[aria-disabled='true'], [role='button'][aria-disabled='true']",
-  ).filter((_, element) => {
+  const employeeGate = EMPLOYEE_GATE_TEXT.exec(bodyText);
+  const disabledSizes = $(DISABLED_SIZE_SELECTOR).filter((_, element) => {
     const text = $(element).text().trim();
-    return /\b(add to cart|buy now|purchase|out of stock|sold out|unavailable)\b/i.test(
-      text,
-    );
+    return SIZE_TEXT.test(text);
   });
-  const employeeGate =
-    /\b(employee|internal|staff)\b.*\b(log in|login|account|only)\b/i.exec(
-      bodyText,
-    );
-  const disabledSizes = $(
-    "[data-size][disabled], [data-size][aria-disabled='true'], button[disabled], button[aria-disabled='true']",
-  ).filter((_, element) => {
+  const enabledSizes = $(ENABLED_SIZE_SELECTOR).filter((_, element) => {
     const text = $(element).text().trim();
-    return /^(xs|s|m|l|xl|xxl|\d+)$|size/i.test(text);
-  });
-  const enabledSizes = $(
-    "[data-size]:not(:disabled):not([aria-disabled='true']), button:not(:disabled):not([aria-disabled='true'])",
-  ).filter((_, element) => {
-    const text = $(element).text().trim();
-    return /^(xs|s|m|l|xl|xxl|\d+)$|size/i.test(text);
+    return SIZE_TEXT.test(text);
   });
 
   return [
-    {
+    detector({
       name: "animate-wiggle",
       matched: animatedElements.length > 0,
       confidence: "low",
@@ -59,8 +80,8 @@ export function detectAvailabilitySignals(html: string): DetectorResult[] {
               ),
             ]
           : [],
-    },
-    {
+    }),
+    detector({
       name: "unavailable-text",
       matched: unavailableText !== null,
       confidence: "high",
@@ -75,8 +96,8 @@ export function detectAvailabilitySignals(html: string): DetectorResult[] {
               ),
             ]
           : [],
-    },
-    {
+    }),
+    detector({
       name: "disabled-purchase-control",
       matched: disabledPurchaseControls.length > 0,
       confidence: "high",
@@ -91,8 +112,8 @@ export function detectAvailabilitySignals(html: string): DetectorResult[] {
               ),
             ]
           : [],
-    },
-    {
+    }),
+    detector({
       name: "employee-gated",
       matched: employeeGate !== null,
       confidence: "high",
@@ -107,8 +128,8 @@ export function detectAvailabilitySignals(html: string): DetectorResult[] {
               ),
             ]
           : [],
-    },
-    {
+    }),
+    detector({
       name: "disabled-size",
       matched: disabledSizes.length > 0,
       confidence: "high",
@@ -123,8 +144,8 @@ export function detectAvailabilitySignals(html: string): DetectorResult[] {
               ),
             ]
           : [],
-    },
-    {
+    }),
+    detector({
       name: "enabled-size",
       matched: enabledSizes.length > 0,
       confidence: "medium",
@@ -139,8 +160,8 @@ export function detectAvailabilitySignals(html: string): DetectorResult[] {
               ),
             ]
           : [],
-    },
-    {
+    }),
+    detector({
       name: "enabled-public-purchase-control",
       matched: enabledPublicPurchaseControls.length > 0,
       confidence: "high",
@@ -155,6 +176,6 @@ export function detectAvailabilitySignals(html: string): DetectorResult[] {
               ),
             ]
           : [],
-    },
+    }),
   ];
 }

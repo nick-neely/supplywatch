@@ -4,7 +4,7 @@ import type {
   DetectorResult,
 } from "./types.js";
 
-const confidenceRank: Record<DetectorConfidence, number> = {
+const CONFIDENCE_RANK: Record<DetectorConfidence, number> = {
   low: 1,
   medium: 2,
   high: 3,
@@ -15,7 +15,7 @@ function strongestConfidence(
   fallback: DetectorConfidence,
 ): DetectorConfidence {
   return detectors.reduce<DetectorConfidence>((strongest, detector) => {
-    return confidenceRank[detector.confidence] > confidenceRank[strongest]
+    return CONFIDENCE_RANK[detector.confidence] > CONFIDENCE_RANK[strongest]
       ? detector.confidence
       : strongest;
   }, fallback);
