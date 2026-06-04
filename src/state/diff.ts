@@ -143,7 +143,7 @@ function productRecordFromSnapshot(
     name: input.product.name,
     url: input.product.url,
     imageUrl: input.product.imageUrl,
-    description: input.product.description,
+    description: input.inspection?.description ?? input.product.description,
     collection: input.product.collection,
     price: input.product.price,
     normalizedSnapshot,
@@ -437,8 +437,24 @@ function buyableStateFromInspection(
   const hasEmployeeGate = inspection.detectors.some(
     (detector) => detector.name === "employee-gated" && detector.matched,
   );
+  const hasArchivedState = inspection.detectors.some(
+    (detector) => detector.name === "archived" && detector.matched,
+  );
+  const hasOutOfStockState = inspection.detectors.some(
+    (detector) =>
+      detector.matched &&
+      [
+        "unavailable-text",
+        "disabled-purchase-control",
+        "disabled-size",
+      ].includes(detector.name),
+  );
 
-  return hasEmployeeGate ? "employee_only" : "out_of_stock";
+  if (hasEmployeeGate || hasArchivedState) {
+    return "employee_only";
+  }
+
+  return hasOutOfStockState ? "out_of_stock" : "unknown";
 }
 
 function outOfStockConfirmationCount(

@@ -63,6 +63,63 @@ describe("detail inspection", () => {
     );
   });
 
+  it("extracts product copy from the opened detail state", () => {
+    const result = inspectProductDetailHtml(
+      `
+        <main>
+          <h2>Goblin Mode Crewneck</h2>
+          <img alt="Goblin Mode Crewneck" src="/goblin.png">
+          <p>Never talk about goblins. But get this goblin crewneck while supplies last. 100% cotton.</p>
+          <button type="button" disabled>Out of stock</button>
+        </main>
+      `,
+      PRODUCT,
+    );
+
+    expect(result.description).toBe(
+      "Never talk about goblins. But get this goblin crewneck while supplies last. 100% cotton.",
+    );
+  });
+
+  it("classifies only the active detail modal when global page text has unrelated signals", () => {
+    const result = inspectProductDetailHtml(
+      `
+        <body>
+          <nav>
+            <button>Employee Login</button>
+            <a>Archived</a>
+          </nav>
+          <div class="window">
+            <h2>Goblin Mode Crewneck</h2>
+            <p>Never talk about goblins. But get this goblin crewneck while supplies last. 100% cotton.</p>
+            <button type="button" disabled>XS</button>
+            <button type="button" disabled>Out of stock</button>
+          </div>
+        </body>
+      `,
+      PRODUCT,
+    );
+
+    expect(result.detectors).toContainEqual(
+      expect.objectContaining({
+        name: "disabled-purchase-control",
+        matched: true,
+      }),
+    );
+    expect(result.detectors).toContainEqual(
+      expect.objectContaining({
+        name: "employee-gated",
+        matched: false,
+      }),
+    );
+    expect(result.detectors).toContainEqual(
+      expect.objectContaining({
+        name: "archived",
+        matched: false,
+      }),
+    );
+  });
+
   it.each([
     ["purchase-button", true, "high", [], []],
     ["sizeless", true, "high", [], []],
@@ -181,6 +238,9 @@ describe("detail inspection", () => {
 
     await openProductDetailFromListing(page, productWithoutUrl);
 
+    expect(page.locator).toHaveBeenCalledWith(
+      'button:has(img[alt="Sold Through Hoodie"])',
+    );
     expect(page.goto).toHaveBeenCalledWith("https://supplyco.openai.com", {
       waitUntil: "networkidle",
     });

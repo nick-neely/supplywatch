@@ -17,6 +17,7 @@ const SIZE_TEXT = /^(xs|s|m|l|xl|xxl|\d+)$/i;
 const UNAVAILABLE_TEXT = /\b(out of stock|sold out|unavailable)\b/i;
 const EMPLOYEE_GATE_TEXT =
   /\b(employee|internal|staff)\b.*\b(log in|login|account|only)\b/i;
+const ARCHIVED_TEXT = /\barchived\b/i;
 
 function textEvidence(
   kind: string,
@@ -55,6 +56,7 @@ export function detectAvailabilitySignals(html: string): DetectorResult[] {
     },
   );
   const employeeGate = EMPLOYEE_GATE_TEXT.exec(bodyText);
+  const archivedText = ARCHIVED_TEXT.exec(bodyText);
   const disabledSizes = $(DISABLED_SIZE_SELECTOR).filter((_, element) => {
     const text = $(element).text().trim();
     return SIZE_TEXT.test(text);
@@ -125,6 +127,22 @@ export function detectAvailabilitySignals(html: string): DetectorResult[] {
                 "access-gate",
                 "Product detail state requires an employee or internal account.",
                 employeeGate[0],
+              ),
+            ]
+          : [],
+    }),
+    detector({
+      name: "archived",
+      matched: archivedText !== null,
+      confidence: "high",
+      polarity: "negative",
+      evidence:
+        archivedText !== null
+          ? [
+              textEvidence(
+                "archived-copy",
+                "Product detail state is marked archived.",
+                archivedText[0],
               ),
             ]
           : [],

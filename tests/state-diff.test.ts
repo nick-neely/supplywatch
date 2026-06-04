@@ -39,6 +39,7 @@ const PRODUCT: DiscoveredProduct = {
 const BUYABLE_INSPECTION: DetailInspectionResult = {
   stableId: PRODUCT.stableId,
   productUrl: PRODUCT.url,
+  description: PRODUCT.description,
   buyable: true,
   confidence: "high",
   availableSizes: ["M"],
@@ -156,6 +157,69 @@ describe("diffProductSnapshot", () => {
       firstPublicAt: OBSERVED_AT,
       outOfStockConfirmations: 0,
       retiredAt: null,
+    });
+  });
+
+  it("persists detail description when the card does not expose product copy", () => {
+    const state = repository();
+
+    diffProductSnapshot(state, {
+      product: {
+        ...PRODUCT,
+        description: null,
+        normalizedSnapshot: {
+          ...PRODUCT.normalizedSnapshot,
+          description: null,
+        },
+      },
+      inspection: {
+        ...OUT_OF_STOCK_INSPECTION,
+        description:
+          "Never talk about goblins. But get this goblin crewneck while supplies last. 100% cotton.",
+      },
+      observedAt: OBSERVED_AT,
+    });
+
+    expect(state.getProduct(PRODUCT.stableId)).toMatchObject({
+      description:
+        "Never talk about goblins. But get this goblin crewneck while supplies last. 100% cotton.",
+      buyableState: "out_of_stock",
+    });
+  });
+
+  it("classifies archived detail states as employee-only instead of unknown", () => {
+    const state = repository();
+
+    diffProductSnapshot(state, {
+      product: PRODUCT,
+      inspection: {
+        ...OUT_OF_STOCK_INSPECTION,
+        description: "Released Feb 2026 [Archived]",
+        detailText: "Codex Cap Released Feb 2026 [Archived]",
+        actionEvidence: [],
+        evidence: [
+          {
+            kind: "archived-copy",
+            message: "Product detail state is marked archived.",
+            value: "Archived",
+          },
+        ],
+        detectors: [
+          {
+            name: "archived",
+            matched: true,
+            confidence: "high",
+            polarity: "negative",
+            evidence: [],
+          },
+        ],
+      },
+      observedAt: OBSERVED_AT,
+    });
+
+    expect(state.getProduct(PRODUCT.stableId)).toMatchObject({
+      buyableState: "employee_only",
+      outOfStockConfirmations: 0,
     });
   });
 

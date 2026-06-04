@@ -46,6 +46,7 @@ const DISCOVERED_PRODUCT: DiscoveredProduct = {
 const PUBLIC_DETAIL_INSPECTION: DetailInspectionResult = {
   stableId: "url-products-public-drop-tee",
   productUrl: "https://supplyco.openai.com/products/public-drop-tee",
+  description: "Soft launch shirt",
   buyable: true,
   confidence: "high",
   availableSizes: ["M"],

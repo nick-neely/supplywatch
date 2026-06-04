@@ -22,6 +22,7 @@ export type DetailSizeEvidence = {
 export type DetailInspectionResult = {
   stableId: string;
   productUrl: string | null;
+  description: string | null;
   buyable: boolean;
   confidence: DetectorConfidence;
   availableSizes: string[];
@@ -118,12 +119,16 @@ export function inspectProductDetailHtml(
   html: string,
   product: DiscoveredProduct,
 ): DetailInspectionResult {
-  const extracted = extractDetailEvidence(html);
-  const availability = classifyAvailability(detectAvailabilitySignals(html));
+  const detailHtml = extractDetailHtml(html);
+  const extracted = extractDetailEvidence(detailHtml);
+  const availability = classifyAvailability(
+    detectAvailabilitySignals(detailHtml),
+  );
 
   return {
     stableId: product.stableId,
     productUrl: product.url,
+    description: extracted.description,
     buyable: availability.buyable,
     confidence: availability.confidence,
     availableSizes: extracted.sizes
@@ -140,12 +145,21 @@ export function inspectProductDetailHtml(
   };
 }
 
+function extractDetailHtml(html: string): string {
+  const $ = cheerio.load(html);
+  const modal = $(".window").last();
+
+  return modal.length > 0 ? $.html(modal) : html;
+}
+
 function extractDetailEvidence(html: string): {
   actions: DetailActionEvidence[];
   sizes: DetailSizeEvidence[];
+  description: string | null;
   detailText: string;
 } {
   const $ = cheerio.load(html);
+  const detailText = normalizeWhitespace($("body").text());
 
   return {
     actions: $(ACTION_SELECTOR)
@@ -174,8 +188,36 @@ function extractDetailEvidence(html: string): {
         };
       })
       .filter((size) => SIZE_TEXT.test(size.label)),
-    detailText: normalizeWhitespace($("body").text()),
+    description: detailDescription($),
+    detailText,
   };
+}
+
+function detailDescription($: cheerio.CheerioAPI): string | null {
+  const title = normalizeWhitespace($("h1,h2,h3,h4").first().text());
+  const actionLabels = new Set(
+    $(ACTION_SELECTOR)
+      .toArray()
+      .map((node) => normalizeWhitespace($(node).text()).toLowerCase())
+      .filter(Boolean),
+  );
+
+  for (const node of $("p").toArray()) {
+    const text = normalizeWhitespace($(node).text());
+    const normalizedText = text.toLowerCase();
+
+    if (
+      text &&
+      text !== title &&
+      !actionLabels.has(normalizedText) &&
+      !SIZE_TEXT.test(text) &&
+      !/^(out of stock|sold out|unavailable)$/i.test(text)
+    ) {
+      return text;
+    }
+  }
+
+  return null;
 }
 
 function isDisabled(element: ReturnType<cheerio.CheerioAPI>): boolean {
@@ -200,6 +242,7 @@ async function clickFirstMatchingProductLocator(
 ): Promise<void> {
   const errors: unknown[] = [];
   const locators = [
+    page.locator(productImageButtonSelector(productName)).first(),
     page.getByAltText(productName, { exact: true }).first(),
     page
       .locator(PRODUCT_CARD_SELECTOR)
@@ -217,4 +260,12 @@ async function clickFirstMatchingProductLocator(
   }
 
   throw errors[errors.length - 1] ?? new Error("No matching product locator");
+}
+
+function productImageButtonSelector(productName: string): string {
+  return `button:has(img[alt="${cssString(productName)}"])`;
+}
+
+function cssString(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
