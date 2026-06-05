@@ -1,5 +1,9 @@
 import type {
   BuyableState,
+  DashboardEventDetail,
+  DashboardEventList,
+  DashboardEventRow,
+  DashboardEventSortBy,
   DashboardProductDetail,
   DashboardProductListOptions,
   DashboardProductPage,
@@ -11,6 +15,7 @@ import type {
   DashboardRunRow,
   DashboardRunSortBy,
   DashboardSortDirection,
+  NotificationStatus,
   RunStatus,
   WatcherDashboardSummary,
 } from "@supplywatch/state";
@@ -18,7 +23,10 @@ import {
   DASHBOARD_PRODUCT_SORT_FIELDS,
   DASHBOARD_PRODUCT_WATCH_STATUSES,
 } from "@supplywatch/state/dashboard";
-import { BUYABLE_STATES } from "@supplywatch/state/types";
+import {
+  BUYABLE_STATES,
+  NOTIFICATION_STATUSES,
+} from "@supplywatch/state/types";
 import {
   type ColumnDef,
   flexRender,
@@ -37,6 +45,12 @@ export type ProductListFetcher = (
 export type ProductDetailFetcher = (
   stableId: string,
 ) => Promise<DashboardProductDetail | null>;
+export type EventsFetcher = (
+  state: EventsTableState,
+) => Promise<DashboardEventList>;
+export type EventDetailFetcher = (
+  eventId: number,
+) => Promise<DashboardEventDetail | null>;
 export type RunsFetcher = (state: RunsTableState) => Promise<DashboardRunList>;
 export type RunDetailFetcher = (
   runId: number,
@@ -46,6 +60,8 @@ export type AppProps = {
   fetchSummary?: SummaryFetcher;
   fetchProducts?: ProductListFetcher;
   fetchProductDetail?: ProductDetailFetcher;
+  fetchEvents?: EventsFetcher;
+  fetchEventDetail?: EventDetailFetcher;
   fetchRuns?: RunsFetcher;
   fetchRunDetail?: RunDetailFetcher;
   refreshIntervalMs?: number;
@@ -54,6 +70,16 @@ export type AppProps = {
 export type RunsTableState = {
   status?: RunStatus;
   sortBy: DashboardRunSortBy;
+  sortDirection: DashboardSortDirection;
+  page: number;
+  pageSize: number;
+};
+
+export type EventsTableState = {
+  eventType?: string;
+  notificationStatus?: NotificationStatus;
+  productId?: string;
+  sortBy: DashboardEventSortBy;
   sortDirection: DashboardSortDirection;
   page: number;
   pageSize: number;
@@ -77,17 +103,33 @@ const RUN_SORT_COLUMNS = [
   "productCount",
 ] as const satisfies readonly DashboardRunSortBy[];
 const RUN_PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
+const EVENT_PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
+const EVENT_SORT_COLUMNS = [
+  "createdAt",
+  "notifiedAt",
+  "eventType",
+  "notificationStatus",
+  "attemptCount",
+] as const satisfies readonly DashboardEventSortBy[];
 const DEFAULT_RUNS_TABLE_STATE: RunsTableState = {
   sortBy: "startedAt",
   sortDirection: "desc",
   page: 1,
   pageSize: 25,
 };
+const DEFAULT_EVENTS_TABLE_STATE: EventsTableState = {
+  sortBy: "createdAt",
+  sortDirection: "desc",
+  page: 1,
+  pageSize: 50,
+};
 
 export function App({
   fetchSummary = fetchSummaryFromApi,
   fetchProducts = fetchProductsFromApi,
   fetchProductDetail = fetchProductDetailFromApi,
+  fetchEvents = fetchEventsFromApi,
+  fetchEventDetail = fetchEventDetailFromApi,
   fetchRuns = fetchRunsFromApi,
   fetchRunDetail = fetchRunDetailFromApi,
   refreshIntervalMs = DEFAULT_REFRESH_INTERVAL_MS,
@@ -102,6 +144,12 @@ export function App({
           className={route.pathname.startsWith("/products") ? "active" : ""}
         >
           Products
+        </a>
+        <a
+          href="/events"
+          className={route.pathname.startsWith("/events") ? "active" : ""}
+        >
+          Events
         </a>
         <a
           href="/runs"
@@ -121,6 +169,8 @@ export function App({
         fetchSummary,
         fetchProducts,
         fetchProductDetail,
+        fetchEvents,
+        fetchEventDetail,
         fetchRuns,
         fetchRunDetail,
         refreshIntervalMs,
@@ -150,6 +200,19 @@ function renderRoute(pathname: string, props: Required<AppProps>): ReactNode {
 
   if (pathname === "/runs") {
     return <RunsPage fetchRuns={props.fetchRuns} />;
+  }
+
+  if (pathname === "/events") {
+    return <EventsPage fetchEvents={props.fetchEvents} />;
+  }
+
+  if (pathname.startsWith("/events/")) {
+    return (
+      <EventDetailPage
+        fetchEventDetail={props.fetchEventDetail}
+        eventId={Number(pathname.replace("/events/", ""))}
+      />
+    );
   }
 
   if (pathname.startsWith("/runs/")) {
@@ -675,6 +738,389 @@ function ProductDetailPage({
   );
 }
 
+function EventsPage({ fetchEvents }: { fetchEvents: EventsFetcher }) {
+  const [tableState, setTableState] = useState(() =>
+    parseEventsTableState(window.location.search),
+  );
+  const [events, setEvents] = useState<DashboardEventList | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setIsRefreshing(true);
+    setError(null);
+
+    try {
+      setEvents(await fetchEvents(tableState));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [fetchEvents, tableState]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const updateTableState = (next: Partial<EventsTableState>) => {
+    const updated = { ...tableState, ...next };
+    setTableState(updated);
+    navigateTo(`/events?${serializeEventsTableState(updated)}`);
+  };
+
+  return (
+    <>
+      <header className="dashboard-header">
+        <div>
+          <p className="ledger-label">Watcher dashboard</p>
+          <h1>Events</h1>
+        </div>
+        <button type="button" onClick={() => void refresh()}>
+          {isRefreshing ? "Refreshing..." : "Refresh Events"}
+        </button>
+      </header>
+
+      <section className="product-toolbar" aria-label="Event filters">
+        <label>
+          Event type
+          <input
+            name="event-type"
+            value={tableState.eventType ?? ""}
+            onInput={(event) =>
+              updateTableState({
+                eventType: event.currentTarget.value || undefined,
+                page: 1,
+              })
+            }
+          />
+        </label>
+        <label>
+          Product
+          <input
+            name="event-product"
+            value={tableState.productId ?? ""}
+            onInput={(event) =>
+              updateTableState({
+                productId: event.currentTarget.value || undefined,
+                page: 1,
+              })
+            }
+          />
+        </label>
+        <label>
+          Notification status
+          <select
+            value={tableState.notificationStatus ?? "all"}
+            onChange={(event) =>
+              updateTableState({
+                notificationStatus: parseNotificationStatus(
+                  event.currentTarget.value,
+                ),
+                page: 1,
+              })
+            }
+          >
+            <option value="all">All statuses</option>
+            {NOTIFICATION_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Rows
+          <select
+            aria-label="Event rows per page"
+            onChange={(event) =>
+              updateTableState({
+                pageSize: Number(event.currentTarget.value),
+                page: 1,
+              })
+            }
+            value={tableState.pageSize}
+          >
+            {EVENT_PAGE_SIZE_OPTIONS.map((pageSize) => (
+              <option key={pageSize} value={pageSize}>
+                {pageSize}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Sort
+          <select
+            value={`${tableState.sortBy}.${tableState.sortDirection}`}
+            onChange={(event) => {
+              const [sortBy, sortDirection] =
+                event.currentTarget.value.split(".");
+              updateTableState({
+                sortBy: parseEventSort(sortBy),
+                sortDirection: sortDirection === "asc" ? "asc" : "desc",
+                page: 1,
+              });
+            }}
+          >
+            <option value="createdAt.desc">Created, newest</option>
+            <option value="createdAt.asc">Created, oldest</option>
+            <option value="notifiedAt.desc">Notified, newest</option>
+            <option value="eventType.asc">Event type</option>
+            <option value="notificationStatus.asc">Notification status</option>
+            <option value="attemptCount.desc">Attempt count</option>
+          </select>
+        </label>
+      </section>
+
+      {error ? <p className="error-panel">{error}</p> : null}
+
+      {events ? (
+        <>
+          <EventsTable events={events.events} />
+          <footer className="table-footer">
+            <span>
+              Page {events.pagination.page} of {events.pagination.totalPages},{" "}
+              {events.pagination.totalItems} Events
+            </span>
+            <span className="pagination-controls">
+              <button
+                className="ghost-button"
+                disabled={tableState.page <= 1}
+                type="button"
+                onClick={() =>
+                  updateTableState({ page: Math.max(1, tableState.page - 1) })
+                }
+              >
+                Previous page
+              </button>
+              <button
+                className="ghost-button"
+                disabled={tableState.page >= events.pagination.totalPages}
+                type="button"
+                onClick={() =>
+                  updateTableState({
+                    page: Math.min(
+                      events.pagination.totalPages,
+                      tableState.page + 1,
+                    ),
+                  })
+                }
+              >
+                Next page
+              </button>
+            </span>
+          </footer>
+        </>
+      ) : (
+        <section className="skeleton-table" aria-label="Loading Events" />
+      )}
+    </>
+  );
+}
+
+function EventsTable({ events }: { events: DashboardEventRow[] }) {
+  const columns = useMemo<ColumnDef<DashboardEventRow>[]>(
+    () => [
+      {
+        accessorKey: "eventType",
+        header: "Event",
+        cell: ({ row }) => (
+          <span>
+            <a href={`/events/${row.original.id}`}>{row.original.eventType}</a>
+            {isCandidateSignalEvent(row.original.eventType) ? (
+              <span className="stale-note">Candidate evidence</span>
+            ) : null}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "productId",
+        header: "Product",
+        cell: ({ row }) => <EventProductLink event={row.original} />,
+      },
+      {
+        accessorKey: "notificationStatus",
+        header: "Notification",
+        cell: ({ row }) => (
+          <StatusChip value={row.original.notificationStatus} />
+        ),
+      },
+      {
+        accessorKey: "attemptCount",
+        header: "Attempts",
+      },
+      {
+        accessorKey: "createdAt",
+        header: "Created",
+        cell: ({ row }) => formatTimestamp(row.original.createdAt),
+      },
+      {
+        accessorKey: "notifiedAt",
+        header: "Notified",
+        cell: ({ row }) => formatTimestamp(row.original.notifiedAt),
+      },
+      {
+        id: "details",
+        header: "Details",
+        cell: ({ row }) => (
+          <span>
+            {row.original.hasPayload ? "Payload" : "No payload"}
+            {row.original.hasNotificationError ? ", error" : ""}
+          </span>
+        ),
+      },
+    ],
+    [],
+  );
+  const table = useReactTable({
+    data: events,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
+  const parentRef = useRef<HTMLDivElement>(null);
+  const rows = table.getRowModel().rows;
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 56,
+    overscan: 8,
+  });
+  const virtualRows = virtualizer.getVirtualItems();
+  const visibleRows =
+    virtualRows.length > 0
+      ? virtualRows.map((virtualRow) => ({
+          row: rows[virtualRow.index],
+          transform: `translateY(${virtualRow.start}px)`,
+        }))
+      : rows.map((row, index) => ({
+          row,
+          transform: `translateY(${index * 56}px)`,
+        }));
+
+  return (
+    <div className="table-viewport" ref={parentRef}>
+      <Table style={{ minHeight: `${Math.max(rows.length, 1) * 56}px` }}>
+        <thead>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <tr key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <th key={header.id}>
+                  {flexRender(
+                    header.column.columnDef.header,
+                    header.getContext(),
+                  )}
+                </th>
+              ))}
+            </tr>
+          ))}
+        </thead>
+        <tbody>
+          {visibleRows.map(({ row, transform }) =>
+            row ? (
+              <tr key={row.id} style={{ transform }}>
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ) : null,
+          )}
+        </tbody>
+      </Table>
+    </div>
+  );
+}
+
+function EventDetailPage({
+  fetchEventDetail,
+  eventId,
+}: {
+  fetchEventDetail: EventDetailFetcher;
+  eventId: number;
+}) {
+  const [event, setEvent] = useState<DashboardEventDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchEventDetail(eventId)
+      .then((event) => {
+        if (!cancelled) {
+          setEvent(event);
+          setError(event ? null : "Event not found");
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setError(error instanceof Error ? error.message : String(error));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, fetchEventDetail]);
+
+  if (error) {
+    return <p className="error-panel">{error}</p>;
+  }
+
+  if (!event) {
+    return <section className="skeleton-panel" aria-label="Loading Event" />;
+  }
+
+  return (
+    <section className="detail-layout" aria-label={`Event ${event.id} detail`}>
+      <a className="back-link" href="/events">
+        Back to Events
+      </a>
+      <article className="detail-panel">
+        <div className="detail-title">
+          <h2>Event #{event.id}</h2>
+          <StatusChip value={event.notificationStatus} />
+        </div>
+        {isCandidateSignalEvent(event.eventType) ? (
+          <p className="warning-text">
+            Candidate evidence, not confirmed availability.
+          </p>
+        ) : null}
+        <dl>
+          <DetailField label="Event type">{event.eventType}</DetailField>
+          <DetailField label="Product">
+            <EventProductLink event={event} />
+          </DetailField>
+          <DetailField label="Attempts">{event.attemptCount}</DetailField>
+          <DetailField label="Last attempt">
+            {formatTimestamp(event.lastAttemptAt)}
+          </DetailField>
+          <DetailField label="Created">
+            {formatTimestamp(event.createdAt)}
+          </DetailField>
+          <DetailField label="Notified">
+            {formatTimestamp(event.notifiedAt)}
+          </DetailField>
+        </dl>
+      </article>
+      <article className="detail-panel evidence-panel">
+        <h2>Payload JSON</h2>
+        <pre>{JSON.stringify(event.payload, null, 2)}</pre>
+      </article>
+      <article className="detail-panel evidence-panel">
+        <h2>Notification error</h2>
+        {event.notificationError ? (
+          <pre>{event.notificationError}</pre>
+        ) : (
+          <p className="muted-text">
+            No notification error persisted for this Event.
+          </p>
+        )}
+      </article>
+    </section>
+  );
+}
+
 function RunsPage({ fetchRuns }: { fetchRuns: RunsFetcher }) {
   const [tableState, setTableState] = useState(() =>
     parseRunsTableState(window.location.search),
@@ -1182,6 +1628,35 @@ async function fetchProductDetailFromApi(
   return (await response.json()) as DashboardProductDetail;
 }
 
+async function fetchEventsFromApi(
+  state: EventsTableState,
+): Promise<DashboardEventList> {
+  const response = await fetch(
+    `/api/events?${serializeEventsTableState(state)}`,
+  );
+
+  if (!response.ok) {
+    throw new Error(`Events request failed with HTTP ${response.status}`);
+  }
+
+  return (await response.json()) as DashboardEventList;
+}
+
+async function fetchEventDetailFromApi(
+  eventId: number,
+): Promise<DashboardEventDetail | null> {
+  const response = await fetch(`/api/events/${eventId}`);
+
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(`Event request failed with HTTP ${response.status}`);
+  }
+
+  return (await response.json()) as DashboardEventDetail;
+}
+
 async function fetchRunsFromApi(
   state: RunsTableState,
 ): Promise<DashboardRunList> {
@@ -1336,8 +1811,40 @@ function parseRunsTableState(search: string): RunsTableState {
   };
 }
 
+function parseEventsTableState(search: string): EventsTableState {
+  const params = new URLSearchParams(search);
+
+  return {
+    eventType: optionalParam(params.get("eventType")),
+    notificationStatus: parseNotificationStatus(
+      params.get("notificationStatus"),
+    ),
+    productId: optionalParam(params.get("productId")),
+    sortBy: parseEventSort(params.get("sort")),
+    sortDirection: params.get("direction") === "asc" ? "asc" : "desc",
+    page: parsePositiveInteger(
+      params.get("page"),
+      DEFAULT_EVENTS_TABLE_STATE.page,
+    ),
+    pageSize: parsePositiveInteger(
+      params.get("pageSize"),
+      DEFAULT_EVENTS_TABLE_STATE.pageSize,
+    ),
+  };
+}
+
 function parseRunStatus(value: string | null): RunStatus | undefined {
   if (isRunStatus(value)) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function parseNotificationStatus(
+  value: string | null,
+): NotificationStatus | undefined {
+  if (isNotificationStatus(value)) {
     return value;
   }
 
@@ -1356,6 +1863,24 @@ function serializeRunsTableState(state: RunsTableState): string {
   return params.toString();
 }
 
+function serializeEventsTableState(state: EventsTableState): string {
+  const params = new URLSearchParams();
+  if (state.eventType) {
+    params.set("eventType", state.eventType);
+  }
+  if (state.notificationStatus) {
+    params.set("notificationStatus", state.notificationStatus);
+  }
+  if (state.productId) {
+    params.set("productId", state.productId);
+  }
+  params.set("sort", state.sortBy);
+  params.set("direction", state.sortDirection);
+  params.set("page", String(state.page));
+  params.set("pageSize", String(state.pageSize));
+  return params.toString();
+}
+
 function parseRunSort(value: string | null | undefined): DashboardRunSortBy {
   if (isRunSort(value)) {
     return value;
@@ -1364,14 +1889,36 @@ function parseRunSort(value: string | null | undefined): DashboardRunSortBy {
   return DEFAULT_RUNS_TABLE_STATE.sortBy;
 }
 
+function parseEventSort(
+  value: string | null | undefined,
+): DashboardEventSortBy {
+  if (isEventSort(value)) {
+    return value;
+  }
+
+  return DEFAULT_EVENTS_TABLE_STATE.sortBy;
+}
+
 function isRunStatus(value: string | null): value is RunStatus {
   return RUN_STATUSES.some((status) => status === value);
+}
+
+function isNotificationStatus(
+  value: string | null,
+): value is NotificationStatus {
+  return NOTIFICATION_STATUSES.some((status) => status === value);
 }
 
 function isRunSort(
   value: string | null | undefined,
 ): value is DashboardRunSortBy {
   return RUN_SORT_COLUMNS.some((column) => column === value);
+}
+
+function isEventSort(
+  value: string | null | undefined,
+): value is DashboardEventSortBy {
+  return EVENT_SORT_COLUMNS.some((column) => column === value);
 }
 
 function parsePositiveInteger(value: string | null, fallback: number): number {
@@ -1381,6 +1928,26 @@ function parsePositiveInteger(value: string | null, fallback: number): number {
 
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function isCandidateSignalEvent(eventType: string): boolean {
+  return eventType.includes("candidate") || eventType.includes("signal");
+}
+
+function EventProductLink({
+  event,
+}: {
+  event: Pick<DashboardEventRow, "productId" | "productName">;
+}) {
+  if (!event.productId) {
+    return <>none</>;
+  }
+
+  return (
+    <a href={`/products/${encodeURIComponent(event.productId)}`}>
+      {event.productName ?? event.productId}
+    </a>
+  );
 }
 
 function ProductIdentity({ product }: { product: DashboardProductRow }) {

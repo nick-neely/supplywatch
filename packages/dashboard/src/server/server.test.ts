@@ -213,6 +213,94 @@ describe("dashboard API server", () => {
     }
   });
 
+  it("serves filtered Events and Event detail responses", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "supplywatch-events-api-"));
+    const databasePath = join(directory, "supplywatch.sqlite");
+    const state = openStateRepository(databasePath);
+
+    state.repository.upsertProduct({
+      stableId: "tee-api-event",
+      name: "OpenAI Logo Tee",
+      url: "https://example.com/products/tee",
+      imageUrl: null,
+      description: "A persisted tee.",
+      collection: "Apparel",
+      price: "$42",
+      normalizedSnapshot: { title: "OpenAI Logo Tee" },
+      rawFingerprint: null,
+      buyableState: "unknown",
+      availableSizes: [],
+      firstSeenAt: "2026-06-04T12:00:00.000Z",
+      lastSeenAt: "2026-06-04T15:00:00.000Z",
+      firstPublicAt: null,
+      outOfStockConfirmations: 0,
+      retiredAt: null,
+      retirementReason: null,
+    });
+    const event = state.repository.recordEvent({
+      eventHash: "api-candidate",
+      eventType: "candidate_signal_detected",
+      productId: "tee-api-event",
+      payload: { signal: "animate-wiggle", evidenceOnly: true },
+      notificationStatus: "failed",
+      attemptCount: 2,
+      lastAttemptAt: "2026-06-04T15:01:00.000Z",
+      notificationError: "Discord webhook failed",
+      createdAt: "2026-06-04T15:00:00.000Z",
+      notifiedAt: null,
+    });
+    state.close();
+
+    try {
+      const server = await createDashboardServer({
+        databasePath,
+        host: "127.0.0.1",
+        port: 0,
+      });
+      servers.push(server);
+
+      const listResponse = await fetch(
+        `${server.url}/api/events?eventType=candidate_signal_detected&notificationStatus=failed&productId=tee-api-event&sort=createdAt&direction=asc&page=1&pageSize=10`,
+      );
+      const detailResponse = await fetch(
+        `${server.url}/api/events/${event.id}`,
+      );
+      const missingResponse = await fetch(`${server.url}/api/events/404`);
+
+      expect(listResponse.status).toBe(200);
+      await expect(listResponse.json()).resolves.toMatchObject({
+        pagination: {
+          page: 1,
+          pageSize: 10,
+          totalItems: 1,
+          totalPages: 1,
+        },
+        events: [
+          {
+            id: event.id,
+            eventType: "candidate_signal_detected",
+            productId: "tee-api-event",
+            productName: "OpenAI Logo Tee",
+            notificationStatus: "failed",
+            hasNotificationError: true,
+          },
+        ],
+      });
+      expect(detailResponse.status).toBe(200);
+      await expect(detailResponse.json()).resolves.toMatchObject({
+        id: event.id,
+        payload: { signal: "animate-wiggle", evidenceOnly: true },
+        notificationError: "Discord webhook failed",
+      });
+      expect(missingResponse.status).toBe(404);
+      await expect(missingResponse.json()).resolves.toEqual({
+        error: "Event not found",
+      });
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
   it("fails fast when the configured database file cannot be opened", async () => {
     await expect(
       createDashboardServer({

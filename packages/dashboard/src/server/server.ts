@@ -11,16 +11,21 @@ import {
   type BuyableState,
   DASHBOARD_PRODUCT_SORT_FIELDS,
   DASHBOARD_PRODUCT_WATCH_STATUSES,
+  type DashboardEventSortBy,
   type DashboardProductSort,
   type DashboardProductSortField,
   type DashboardProductWatchStatus,
   type DashboardRunSortBy,
   type DashboardSortDirection,
+  getDashboardEventDetail,
   getDashboardProductDetail,
   getDashboardProducts,
   getDashboardRunDetail,
   getWatcherDashboardSummary,
+  listDashboardEvents,
   listDashboardRuns,
+  NOTIFICATION_STATUSES,
+  type NotificationStatus,
   type OpenReadOnlyStateDatabase,
   openReadOnlyStateDatabase,
   RUN_STATUSES,
@@ -33,6 +38,13 @@ const RUN_SORT_COLUMNS = [
   "status",
   "productCount",
 ] as const satisfies readonly DashboardRunSortBy[];
+const EVENT_SORT_COLUMNS = [
+  "createdAt",
+  "notifiedAt",
+  "eventType",
+  "notificationStatus",
+  "attemptCount",
+] as const satisfies readonly DashboardEventSortBy[];
 
 export type DashboardServerOptions = {
   databasePath: string;
@@ -137,6 +149,41 @@ function handleRequest(
 
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify(product));
+    return;
+  }
+
+  if (url.pathname === "/api/events") {
+    const events = listDashboardEvents(state.database, {
+      eventType: optionalParam(url.searchParams.get("eventType")),
+      notificationStatus: parseNotificationStatus(
+        url.searchParams.get("notificationStatus"),
+      ),
+      productId: optionalParam(url.searchParams.get("productId")),
+      sortBy: parseEventSortBy(url.searchParams.get("sort")),
+      sortDirection: parseSortDirection(url.searchParams.get("direction")),
+      page: positiveInteger(url.searchParams.get("page")),
+      pageSize: positiveInteger(url.searchParams.get("pageSize")),
+    });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify(events));
+    return;
+  }
+
+  const eventDetailMatch = /^\/api\/events\/(\d+)$/.exec(url.pathname);
+  if (eventDetailMatch) {
+    const event = getDashboardEventDetail(
+      state.database,
+      Number(eventDetailMatch[1]),
+    );
+
+    if (!event) {
+      response.writeHead(404, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: "Event not found" }));
+      return;
+    }
+
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify(event));
     return;
   }
 
@@ -271,6 +318,26 @@ function parseRunSortBy(value: string | null): DashboardRunSortBy | undefined {
   return undefined;
 }
 
+function parseEventSortBy(
+  value: string | null,
+): DashboardEventSortBy | undefined {
+  if (isEventSortColumn(value)) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function parseNotificationStatus(
+  value: string | null,
+): NotificationStatus | undefined {
+  if (isNotificationStatus(value)) {
+    return value;
+  }
+
+  return undefined;
+}
+
 function parseSortDirection(
   value: string | null,
 ): DashboardSortDirection | undefined {
@@ -281,8 +348,20 @@ function isRunStatus(value: string | null): value is RunStatus {
   return RUN_STATUSES.some((status) => status === value);
 }
 
+function isNotificationStatus(
+  value: string | null,
+): value is NotificationStatus {
+  return NOTIFICATION_STATUSES.some((status) => status === value);
+}
+
 function isRunSortColumn(value: string | null): value is DashboardRunSortBy {
   return RUN_SORT_COLUMNS.some((column) => column === value);
+}
+
+function isEventSortColumn(
+  value: string | null,
+): value is DashboardEventSortBy {
+  return EVENT_SORT_COLUMNS.some((column) => column === value);
 }
 
 function positiveInteger(value: string | null): number | undefined {

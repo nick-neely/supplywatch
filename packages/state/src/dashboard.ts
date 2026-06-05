@@ -6,14 +6,26 @@ const DEFAULT_STALE_RUNNING_RUN_MINUTES = 30;
 const DEFAULT_RUNS_PAGE = 1;
 const DEFAULT_RUNS_PAGE_SIZE = 25;
 const MAX_RUNS_PAGE_SIZE = 100;
+const DEFAULT_EVENTS_PAGE = 1;
+const DEFAULT_EVENTS_PAGE_SIZE = 50;
+const MAX_EVENTS_PAGE_SIZE = 200;
 const DEFAULT_RUN_SORT_BY = "startedAt";
+const DEFAULT_EVENT_SORT_BY = "createdAt";
 const DEFAULT_RUN_SORT_DIRECTION = "desc";
+const DEFAULT_EVENT_SORT_DIRECTION = "desc";
 const RUN_SORT_EXPRESSIONS = {
   finishedAt: "finished_at",
   productCount: "product_count",
   startedAt: "started_at",
   status: "status",
 } as const satisfies Record<DashboardRunSortBy, string>;
+const EVENT_SORT_EXPRESSIONS = {
+  attemptCount: "e.attempt_count",
+  createdAt: "e.created_at",
+  eventType: "e.event_type",
+  notificationStatus: "e.notification_status",
+  notifiedAt: "e.notified_at",
+} as const satisfies Record<DashboardEventSortBy, string>;
 const RUN_SUMMARY_COLUMNS = `
   id,
   started_at AS startedAt,
@@ -21,6 +33,19 @@ const RUN_SUMMARY_COLUMNS = `
   status,
   product_count AS productCount,
   error_message AS errorMessage
+`;
+const EVENT_COLUMNS = `
+  e.id,
+  e.event_type AS eventType,
+  e.product_id AS productId,
+  p.name AS productName,
+  e.payload_json AS payloadJson,
+  e.notification_status AS notificationStatus,
+  e.attempt_count AS attemptCount,
+  e.last_attempt_at AS lastAttemptAt,
+  e.notification_error AS notificationError,
+  e.created_at AS createdAt,
+  e.notified_at AS notifiedAt
 `;
 
 export type DashboardRunSummary = {
@@ -69,6 +94,54 @@ export type DashboardRunSortBy =
   | "productCount";
 
 export type DashboardSortDirection = "asc" | "desc";
+
+export type DashboardEventSortBy =
+  | "createdAt"
+  | "notifiedAt"
+  | "eventType"
+  | "notificationStatus"
+  | "attemptCount";
+
+export type DashboardEventListOptions = {
+  eventType?: string;
+  notificationStatus?: NotificationStatus;
+  productId?: string;
+  sortBy?: DashboardEventSortBy;
+  sortDirection?: DashboardSortDirection;
+  page?: number;
+  pageSize?: number;
+};
+
+export type DashboardEventRow = {
+  id: number;
+  eventType: string;
+  productId: string | null;
+  productName: string | null;
+  notificationStatus: NotificationStatus;
+  attemptCount: number;
+  lastAttemptAt: string | null;
+  createdAt: string;
+  notifiedAt: string | null;
+  hasPayload: boolean;
+  hasNotificationError: boolean;
+};
+
+export type DashboardEventDetail = DashboardEventRow & {
+  payload: JsonObject;
+  notificationError: string | null;
+};
+
+export type DashboardEventsPagination = {
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+};
+
+export type DashboardEventList = {
+  events: DashboardEventRow[];
+  pagination: DashboardEventsPagination;
+};
 
 export type DashboardRunListOptions = {
   status?: RunStatus;
@@ -247,6 +320,20 @@ type ProductEventSqlRow = {
   notifiedAt: string | null;
 };
 
+type EventSqlRow = {
+  id: number;
+  eventType: string;
+  productId: string | null;
+  productName: string | null;
+  payloadJson: string;
+  notificationStatus: NotificationStatus;
+  attemptCount: number;
+  lastAttemptAt: string | null;
+  notificationError: string | null;
+  createdAt: string;
+  notifiedAt: string | null;
+};
+
 const PRODUCT_SORT_COLUMNS: Record<DashboardProductSortField, string> = {
   name: "p.name",
   collection: "p.collection",
@@ -353,6 +440,74 @@ export function getDashboardRunDetail(
         options.staleRunningRunMinutes ?? DEFAULT_STALE_RUNNING_RUN_MINUTES,
       )
     : null;
+}
+
+export function listDashboardEvents(
+  database: Database.Database,
+  options: DashboardEventListOptions = {},
+): DashboardEventList {
+  const page = normalizePositiveInteger(options.page, DEFAULT_EVENTS_PAGE);
+  const pageSize = Math.min(
+    normalizePositiveInteger(options.pageSize, DEFAULT_EVENTS_PAGE_SIZE),
+    MAX_EVENTS_PAGE_SIZE,
+  );
+  const where = buildEventWhereClause(options);
+  const totalItems = countEvents(database, where);
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const sortBy = normalizeEventSortBy(options.sortBy);
+  const sortDirection = normalizeEventSortDirection(options.sortDirection);
+  const rows = database
+    .prepare<Record<string, unknown>, EventSqlRow>(
+      `
+        SELECT ${EVENT_COLUMNS}
+        FROM events e
+        LEFT JOIN products p ON p.stable_id = e.product_id
+        ${where.sql}
+        ORDER BY ${eventSortExpression(sortBy)} ${sortDirection}, e.id ${sortDirection}
+        LIMIT @limit OFFSET @offset
+      `,
+    )
+    .all({
+      ...where.parameters,
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    });
+
+  return {
+    events: rows.map(mapDashboardEventRow),
+    pagination: {
+      page,
+      pageSize,
+      totalItems,
+      totalPages,
+    },
+  };
+}
+
+export function getDashboardEventDetail(
+  database: Database.Database,
+  eventId: number,
+): DashboardEventDetail | null {
+  const row = database
+    .prepare<{ id: number }, EventSqlRow>(
+      `
+        SELECT ${EVENT_COLUMNS}
+        FROM events e
+        LEFT JOIN products p ON p.stable_id = e.product_id
+        WHERE e.id = @id
+      `,
+    )
+    .get({ id: eventId });
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    ...mapDashboardEventRow(row),
+    payload: JSON.parse(row.payloadJson) as JsonObject,
+    notificationError: row.notificationError,
+  };
 }
 
 export function getDashboardProducts(
@@ -697,6 +852,90 @@ function countRuns(
       )
       .get({ status })?.count ?? 0
   );
+}
+
+function buildEventWhereClause(options: DashboardEventListOptions): {
+  sql: string;
+  parameters: Record<string, unknown>;
+} {
+  const clauses: string[] = [];
+  const parameters: Record<string, unknown> = {};
+
+  if (options.eventType?.trim()) {
+    clauses.push("e.event_type = @eventType");
+    parameters.eventType = options.eventType.trim();
+  }
+  if (options.notificationStatus) {
+    clauses.push("e.notification_status = @notificationStatus");
+    parameters.notificationStatus = options.notificationStatus;
+  }
+  if (options.productId?.trim()) {
+    clauses.push("e.product_id = @productId");
+    parameters.productId = options.productId.trim();
+  }
+
+  return {
+    sql: clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "",
+    parameters,
+  };
+}
+
+function countEvents(
+  database: Database.Database,
+  where: { sql: string; parameters: Record<string, unknown> },
+): number {
+  return (
+    database
+      .prepare<Record<string, unknown>, CountRow>(
+        `
+          SELECT COUNT(*) AS count
+          FROM events e
+          ${where.sql}
+        `,
+      )
+      .get(where.parameters)?.count ?? 0
+  );
+}
+
+function mapDashboardEventRow(row: EventSqlRow): DashboardEventRow {
+  return {
+    id: row.id,
+    eventType: row.eventType,
+    productId: row.productId,
+    productName: row.productName,
+    notificationStatus: row.notificationStatus,
+    attemptCount: row.attemptCount,
+    lastAttemptAt: row.lastAttemptAt,
+    createdAt: row.createdAt,
+    notifiedAt: row.notifiedAt,
+    hasPayload: row.payloadJson !== "{}",
+    hasNotificationError: Boolean(row.notificationError),
+  };
+}
+
+function eventSortExpression(sortBy: DashboardEventSortBy): string {
+  return EVENT_SORT_EXPRESSIONS[sortBy];
+}
+
+function normalizeEventSortBy(
+  sortBy: DashboardEventSortBy | undefined,
+): DashboardEventSortBy {
+  switch (sortBy) {
+    case "attemptCount":
+    case "eventType":
+    case "notificationStatus":
+    case "notifiedAt":
+    case "createdAt":
+      return sortBy;
+    default:
+      return DEFAULT_EVENT_SORT_BY;
+  }
+}
+
+function normalizeEventSortDirection(
+  sortDirection: DashboardSortDirection | undefined,
+): DashboardSortDirection {
+  return sortDirection === "asc" ? "asc" : DEFAULT_EVENT_SORT_DIRECTION;
 }
 
 function runSortExpression(sortBy: DashboardRunSortBy): string {

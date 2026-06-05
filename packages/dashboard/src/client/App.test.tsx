@@ -6,6 +6,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   App,
+  type EventDetailFetcher,
+  type EventsFetcher,
   type ProductDetailFetcher,
   type ProductListFetcher,
   type SummaryFetcher,
@@ -215,6 +217,119 @@ describe("Watcher dashboard app", () => {
     });
 
     expect(container.textContent).toContain("fingerprint:tee-detail");
+  });
+
+  it("renders Events from URL-backed table state with Product links", async () => {
+    window.history.pushState(
+      {},
+      "",
+      "/events?eventType=candidate_signal_detected&notificationStatus=failed&productId=tee-event&page=2&pageSize=25&sort=createdAt&direction=asc",
+    );
+    const fetchEvents = vi.fn<EventsFetcher>().mockResolvedValue({
+      events: [
+        {
+          id: 12,
+          eventType: "candidate_signal_detected",
+          productId: "tee-event",
+          productName: "OpenAI Logo Tee",
+          notificationStatus: "failed",
+          attemptCount: 2,
+          lastAttemptAt: "2026-06-04T15:01:00.000Z",
+          createdAt: "2026-06-04T15:00:00.000Z",
+          notifiedAt: null,
+          hasPayload: true,
+          hasNotificationError: true,
+        },
+      ],
+      pagination: {
+        page: 2,
+        pageSize: 25,
+        totalItems: 26,
+        totalPages: 2,
+      },
+    });
+
+    const container = renderApp(
+      <App
+        fetchEvents={fetchEvents}
+        fetchSummary={idleSummary}
+        refreshIntervalMs={0}
+      />,
+    );
+
+    await waitForText("candidate_signal_detected");
+
+    expect(fetchEvents).toHaveBeenLastCalledWith({
+      eventType: "candidate_signal_detected",
+      notificationStatus: "failed",
+      productId: "tee-event",
+      sortBy: "createdAt",
+      sortDirection: "asc",
+      page: 2,
+      pageSize: 25,
+    });
+    expect(container.textContent).toContain("Candidate evidence");
+    expect(
+      container.querySelector<HTMLAnchorElement>(
+        'a[href="/products/tee-event"]',
+      )?.textContent,
+    ).toBe("OpenAI Logo Tee");
+
+    const eventTypeInput = container.querySelector<HTMLInputElement>(
+      'input[name="event-type"]',
+    );
+    if (!eventTypeInput) {
+      throw new Error("Missing Event type input");
+    }
+
+    await act(async () => {
+      eventTypeInput.value = "product_publicly_buyable";
+      eventTypeInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(window.location.pathname).toBe("/events");
+    expect(window.location.search).toContain(
+      "eventType=product_publicly_buyable",
+    );
+    expect(window.location.search).toContain("page=1");
+  });
+
+  it("renders Event detail with payload JSON, notification error, and Product link", async () => {
+    window.history.pushState({}, "", "/events/12");
+    const fetchEventDetail = vi.fn<EventDetailFetcher>().mockResolvedValue({
+      id: 12,
+      eventType: "candidate_signal_detected",
+      productId: "tee-event",
+      productName: "OpenAI Logo Tee",
+      payload: { signal: "animate-wiggle", evidenceOnly: true },
+      notificationStatus: "failed",
+      attemptCount: 2,
+      lastAttemptAt: "2026-06-04T15:01:00.000Z",
+      notificationError: "Discord webhook failed",
+      createdAt: "2026-06-04T15:00:00.000Z",
+      notifiedAt: null,
+      hasPayload: true,
+      hasNotificationError: true,
+    });
+
+    const container = renderApp(
+      <App
+        fetchEventDetail={fetchEventDetail}
+        fetchSummary={idleSummary}
+        refreshIntervalMs={0}
+      />,
+    );
+
+    await waitForText("Event #12");
+
+    expect(container.textContent).toContain("Candidate evidence");
+    expect(container.textContent).toContain("Discord webhook failed");
+    expect(container.textContent).toContain('"signal": "animate-wiggle"');
+    expect(
+      container.querySelector<HTMLAnchorElement>(
+        'a[href="/products/tee-event"]',
+      )?.textContent,
+    ).toBe("OpenAI Logo Tee");
   });
 });
 
