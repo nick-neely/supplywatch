@@ -36,8 +36,38 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import "./styles.css";
 
 export type SummaryFetcher = () => Promise<WatcherDashboardSummary>;
@@ -139,32 +169,26 @@ export function App({
   const route = useRoute();
 
   return (
-    <main className="dashboard-shell">
-      <nav className="dashboard-nav" aria-label="Dashboard navigation">
-        <a
+    <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+      <nav
+        className="flex flex-wrap items-center gap-2 border-b pb-3"
+        aria-label="Dashboard navigation"
+      >
+        <NavLink
+          active={route.pathname.startsWith("/products")}
           href="/products"
-          className={route.pathname.startsWith("/products") ? "active" : ""}
         >
           Products
-        </a>
-        <a
-          href="/events"
-          className={route.pathname.startsWith("/events") ? "active" : ""}
-        >
+        </NavLink>
+        <NavLink active={route.pathname.startsWith("/events")} href="/events">
           Events
-        </a>
-        <a
-          href="/runs"
-          className={route.pathname.startsWith("/runs") ? "active" : ""}
-        >
+        </NavLink>
+        <NavLink active={route.pathname.startsWith("/runs")} href="/runs">
           Runs
-        </a>
-        <a
-          href="/summary"
-          className={route.pathname === "/summary" ? "active" : ""}
-        >
+        </NavLink>
+        <NavLink active={route.pathname === "/summary"} href="/summary">
           Summary
-        </a>
+        </NavLink>
       </nav>
 
       {renderRoute(route.pathname, {
@@ -178,6 +202,22 @@ export function App({
         refreshIntervalMs,
       })}
     </main>
+  );
+}
+
+function NavLink({
+  active,
+  children,
+  href,
+}: {
+  active: boolean;
+  children: ReactNode;
+  href: string;
+}) {
+  return (
+    <Button asChild size="sm" variant={active ? "secondary" : "ghost"}>
+      <a href={href}>{children}</a>
+    </Button>
   );
 }
 
@@ -324,6 +364,211 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function PageHeader({
+  eyebrow = "Watcher dashboard",
+  title,
+  actionLabel,
+  isRefreshing,
+  onRefresh,
+  backHref,
+  backLabel,
+  children,
+}: {
+  eyebrow?: string;
+  title: string;
+  actionLabel: string;
+  isRefreshing: boolean;
+  onRefresh: () => void;
+  backHref?: string;
+  backLabel?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <header className="flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex min-w-0 flex-col gap-2">
+        {backHref && backLabel ? (
+          <Button asChild size="sm" variant="ghost">
+            <a href={backHref}>{backLabel}</a>
+          </Button>
+        ) : null}
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase text-muted-foreground">
+            {eyebrow}
+          </p>
+          <h1 className="truncate text-2xl font-semibold tracking-normal">
+            {title}
+          </h1>
+          {children}
+        </div>
+      </div>
+      <Button type="button" onClick={onRefresh}>
+        {isRefreshing ? "Refreshing..." : actionLabel}
+      </Button>
+    </header>
+  );
+}
+
+function ErrorPanel({ message }: { message: string }) {
+  return (
+    <Alert variant="destructive">
+      <AlertDescription>{message}</AlertDescription>
+    </Alert>
+  );
+}
+
+function LoadingPanel({ label }: { label: string }) {
+  return (
+    <Card aria-label={label}>
+      <CardContent className="flex flex-col gap-3 pt-4">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-20 w-full" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function LoadingTable({ label }: { label: string }) {
+  return (
+    <Card aria-label={label}>
+      <CardContent className="flex flex-col gap-2 pt-4">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-3/4" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function Toolbar({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <section
+      className="grid gap-4 border-b pb-4 sm:grid-cols-2 xl:grid-cols-6"
+      aria-label={label}
+    >
+      {children}
+    </section>
+  );
+}
+
+function TextFilter({
+  label,
+  name,
+  value,
+  onChange,
+}: {
+  label: string;
+  name: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Field className="min-w-44">
+      <FieldLabel>{label}</FieldLabel>
+      <Input
+        aria-label={label}
+        name={name}
+        value={value}
+        onInput={(event) => onChange(event.currentTarget.value)}
+      />
+    </Field>
+  );
+}
+
+function SelectFilter({
+  label,
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+  ariaLabel?: string;
+}) {
+  return (
+    <Field className="min-w-44">
+      <FieldLabel>{label}</FieldLabel>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger aria-label={ariaLabel ?? label} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </Field>
+  );
+}
+
+function CheckboxFilter({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <Field orientation="horizontal">
+      <Checkbox
+        aria-label={label}
+        checked={checked}
+        onCheckedChange={(value) => onChange(value === true)}
+      />
+      <FieldLabel>{label}</FieldLabel>
+    </Field>
+  );
+}
+
+function PaginationFooter({
+  label,
+  canGoPrevious,
+  canGoNext,
+  onPrevious,
+  onNext,
+}: {
+  label: string;
+  canGoPrevious: boolean;
+  canGoNext: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <footer className="flex flex-col gap-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+      <span>{label}</span>
+      <div className="flex items-center gap-2">
+        <Button
+          disabled={!canGoPrevious}
+          size="sm"
+          type="button"
+          variant="outline"
+          onClick={onPrevious}
+        >
+          Previous page
+        </Button>
+        <Button
+          disabled={!canGoNext}
+          size="sm"
+          type="button"
+          variant="outline"
+          onClick={onNext}
+        >
+          Next page
+        </Button>
+      </div>
+    </footer>
+  );
+}
+
 const PRODUCT_TABLE_COLUMNS: ColumnDef<DashboardProductRow>[] = [
   {
     accessorKey: "name",
@@ -428,168 +673,137 @@ function ProductsPage({
   });
 
   return (
-    <>
-      <header className="dashboard-header">
-        <div>
-          <p className="ledger-label">Watcher dashboard</p>
-          <h1>Products</h1>
-        </div>
-        <button type="button" onClick={refreshNow}>
-          {isRefreshing ? "Refreshing..." : "Refresh Products"}
-        </button>
-      </header>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        actionLabel="Refresh Products"
+        isRefreshing={isRefreshing}
+        title="Products"
+        onRefresh={refreshNow}
+      />
 
-      <section className="product-toolbar" aria-label="Product filters">
-        <label>
-          Search
-          <input
-            name="product-search"
-            value={options.search ?? ""}
-            onInput={(event) =>
-              updateOptions({
-                ...options,
-                search: event.currentTarget.value || undefined,
-                page: 1,
-              })
-            }
-          />
-        </label>
-        <label>
-          Collection
-          <input
-            name="product-collection"
-            value={options.collection ?? ""}
-            onInput={(event) =>
-              updateOptions({
-                ...options,
-                collection: event.currentTarget.value || undefined,
-                page: 1,
-              })
-            }
-          />
-        </label>
-        <label>
-          Availability state
-          <select
-            value={options.availabilityStates?.[0] ?? ""}
-            onChange={(event) =>
-              updateOptions({
-                ...options,
-                availabilityStates: selectedAvailabilityStates(
-                  event.currentTarget.value,
-                ),
-                page: 1,
-              })
-            }
-          >
-            <option value="">All</option>
-            {BUYABLE_STATES.map((state) => (
-              <option key={state} value={state}>
-                {availabilityLabel(state)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Watch status
-          <select
-            value={options.watchStatus ?? "active"}
-            onChange={(event) =>
-              updateOptions({
-                ...options,
-                watchStatus: watchStatus(event.currentTarget.value),
-                page: 1,
-              })
-            }
-          >
-            <option value="active">Active</option>
-            <option value="retired">Retired</option>
-            <option value="all">All</option>
-          </select>
-        </label>
-        <label>
-          Sort
-          <select
-            value={
-              options.sort
-                ? productSortParam(options.sort)
-                : productSortParam(DEFAULT_PRODUCT_SORT)
-            }
-            onChange={(event) =>
-              updateOptions({
-                ...options,
-                sort: productSort(event.currentTarget.value),
-                page: 1,
-              })
-            }
-          >
-            <option value="lastSeenAt.desc">Last seen, newest</option>
-            <option value="lastSeenAt.asc">Last seen, oldest</option>
-            <option value="firstSeenAt.desc">First seen, newest</option>
-            <option value="name.asc">Name, A to Z</option>
-            <option value="collection.asc">Collection, A to Z</option>
-            <option value="availabilityState.asc">Availability state</option>
-          </select>
-        </label>
-        <label className="checkbox-label">
-          <input
-            checked={options.notificationRelevant ?? false}
-            type="checkbox"
-            onChange={(event) =>
-              updateOptions({
-                ...options,
-                notificationRelevant: event.currentTarget.checked || undefined,
-                page: 1,
-              })
-            }
-          />
-          Notification relevant
-        </label>
-      </section>
+      <Toolbar label="Product filters">
+        <TextFilter
+          label="Search"
+          name="product-search"
+          value={options.search ?? ""}
+          onChange={(value) =>
+            updateOptions({
+              ...options,
+              search: value || undefined,
+              page: 1,
+            })
+          }
+        />
+        <TextFilter
+          label="Collection"
+          name="product-collection"
+          value={options.collection ?? ""}
+          onChange={(value) =>
+            updateOptions({
+              ...options,
+              collection: value || undefined,
+              page: 1,
+            })
+          }
+        />
+        <SelectFilter
+          label="Availability state"
+          value={options.availabilityStates?.[0] ?? "all"}
+          options={[
+            { value: "all", label: "All" },
+            ...BUYABLE_STATES.map((state) => ({
+              value: state,
+              label: availabilityLabel(state),
+            })),
+          ]}
+          onChange={(value) =>
+            updateOptions({
+              ...options,
+              availabilityStates:
+                value === "all" ? [] : selectedAvailabilityStates(value),
+              page: 1,
+            })
+          }
+        />
+        <SelectFilter
+          label="Watch status"
+          value={options.watchStatus ?? "active"}
+          options={[
+            { value: "active", label: "Active" },
+            { value: "retired", label: "Retired" },
+            { value: "all", label: "All" },
+          ]}
+          onChange={(value) =>
+            updateOptions({
+              ...options,
+              watchStatus: watchStatus(value),
+              page: 1,
+            })
+          }
+        />
+        <SelectFilter
+          label="Sort"
+          value={
+            options.sort
+              ? productSortParam(options.sort)
+              : productSortParam(DEFAULT_PRODUCT_SORT)
+          }
+          options={[
+            { value: "lastSeenAt.desc", label: "Last seen, newest" },
+            { value: "lastSeenAt.asc", label: "Last seen, oldest" },
+            { value: "firstSeenAt.desc", label: "First seen, newest" },
+            { value: "name.asc", label: "Name, A to Z" },
+            { value: "collection.asc", label: "Collection, A to Z" },
+            { value: "availabilityState.asc", label: "Availability state" },
+          ]}
+          onChange={(value) =>
+            updateOptions({
+              ...options,
+              sort: productSort(value),
+              page: 1,
+            })
+          }
+        />
+        <CheckboxFilter
+          checked={options.notificationRelevant ?? false}
+          label="Notification relevant"
+          onChange={(checked) =>
+            updateOptions({
+              ...options,
+              notificationRelevant: checked || undefined,
+              page: 1,
+            })
+          }
+        />
+      </Toolbar>
 
-      {error ? <p className="error-panel">{error}</p> : null}
+      {error ? <ErrorPanel message={error} /> : null}
 
       {page ? (
         <>
           <VirtualizedTable rowHeight={72} table={table} />
-          <footer className="table-footer">
-            <span>
-              Page {page.page} of {page.totalPages}, {page.total} Products
-            </span>
-            <span className="pagination-controls">
-              <button
-                className="ghost-button"
-                disabled={page.page <= 1}
-                type="button"
-                onClick={() =>
-                  updateOptions({
-                    ...options,
-                    page: Math.max(1, page.page - 1),
-                  })
-                }
-              >
-                Previous page
-              </button>
-              <button
-                className="ghost-button"
-                disabled={page.page >= page.totalPages}
-                type="button"
-                onClick={() =>
-                  updateOptions({
-                    ...options,
-                    page: Math.min(page.totalPages, page.page + 1),
-                  })
-                }
-              >
-                Next page
-              </button>
-            </span>
-          </footer>
+          <PaginationFooter
+            canGoNext={page.page < page.totalPages}
+            canGoPrevious={page.page > 1}
+            label={`Page ${page.page} of ${page.totalPages}, ${page.total} Products`}
+            onNext={() =>
+              updateOptions({
+                ...options,
+                page: Math.min(page.totalPages, page.page + 1),
+              })
+            }
+            onPrevious={() =>
+              updateOptions({
+                ...options,
+                page: Math.max(1, page.page - 1),
+              })
+            }
+          />
         </>
       ) : (
-        <section className="skeleton-table" aria-label="Loading Products" />
+        <LoadingTable label="Loading Products" />
       )}
-    </>
+    </div>
   );
 }
 
@@ -602,6 +816,7 @@ function VirtualizedTable<TData extends RowData>({
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const rows = table.getRowModel().rows;
+  const tableWidth = Math.max(table.getTotalSize(), 1080);
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -621,39 +836,64 @@ function VirtualizedTable<TData extends RowData>({
         }));
 
   return (
-    <div className="table-viewport" ref={parentRef}>
-      <DashboardTable
-        style={{ minHeight: `${Math.max(rows.length, 1) * rowHeight}px` }}
-      >
-        <thead>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <th key={header.id}>
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext(),
-                  )}
-                </th>
+    <Card>
+      <CardContent className="pt-4">
+        <div
+          className="max-h-[620px] overflow-auto rounded-lg border"
+          ref={parentRef}
+        >
+          <Table className="grid" style={{ width: `${tableWidth}px` }}>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow className="flex" key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead
+                      className="flex items-center"
+                      key={header.id}
+                      style={{ width: `${header.getSize()}px` }}
+                    >
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
+                    </TableHead>
+                  ))}
+                </TableRow>
               ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody>
-          {visibleRows.map(({ row, transform }) =>
-            row ? (
-              <tr key={row.id} style={{ transform }}>
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ) : null,
-          )}
-        </tbody>
-      </DashboardTable>
-    </div>
+            </TableHeader>
+            <TableBody
+              className="relative grid"
+              style={{
+                height: `${Math.max(virtualizer.getTotalSize(), rowHeight)}px`,
+              }}
+            >
+              {visibleRows.map(({ row, transform }) =>
+                row ? (
+                  <TableRow
+                    className="absolute flex w-full"
+                    key={row.id}
+                    style={{ height: `${rowHeight}px`, transform }}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell
+                        className="flex items-center overflow-hidden"
+                        key={cell.id}
+                        style={{ width: `${cell.column.getSize()}px` }}
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ) : null,
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -691,130 +931,152 @@ function ProductDetailPage({
   );
 
   if (error) {
-    return <p className="error-panel">{error}</p>;
+    return <ErrorPanel message={error} />;
   }
 
   if (!product) {
-    return <section className="skeleton-panel" aria-label="Loading Product" />;
+    return <LoadingPanel label="Loading Product" />;
   }
 
   return (
-    <>
-      <header className="dashboard-header detail-header">
-        <div>
-          <a className="back-link" href="/products">
-            Back to Products
-          </a>
-          <h1>{product.name ?? product.stableId}</h1>
-          <p className="muted-text">{product.stableId}</p>
-        </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        actionLabel="Refresh Product"
+        backHref="/products"
+        backLabel="Back to Products"
+        isRefreshing={isRefreshing}
+        title={product.name ?? product.stableId}
+        onRefresh={refreshNow}
+      >
+        <p className="text-sm text-muted-foreground">{product.stableId}</p>
+      </PageHeader>
+
+      <div className="flex flex-wrap gap-2">
         {product.sourceUrl ? (
-          <a
-            className="source-link"
-            href={product.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open source
-          </a>
+          <Button asChild size="sm" variant="outline">
+            <a href={product.sourceUrl} target="_blank" rel="noreferrer">
+              Open source
+            </a>
+          </Button>
         ) : null}
-        <button type="button" onClick={refreshNow}>
-          {isRefreshing ? "Refreshing..." : "Refresh Product"}
-        </button>
-      </header>
+      </div>
 
-      <section className="detail-grid">
+      <section className="grid gap-4 lg:grid-cols-[260px_1fr]">
         <ProductImage product={product} />
-        <article className="detail-panel">
-          <h2>Curated state</h2>
-          <dl>
-            <DetailField label="Availability state">
-              <StatusChip
-                value={availabilityLabel(product.availabilityState)}
-              />
-            </DetailField>
-            <DetailField label="Collection">
-              {product.collection ?? "none"}
-            </DetailField>
-            <DetailField label="Price">{product.price ?? "none"}</DetailField>
-            <DetailField label="Available sizes">
-              {product.availableSizes.length > 0
-                ? product.availableSizes.join(", ")
-                : "none"}
-            </DetailField>
-            <DetailField label="First seen">
-              {formatTimestamp(product.firstSeenAt)}
-            </DetailField>
-            <DetailField label="Last seen">
-              {formatTimestamp(product.lastSeenAt)}
-            </DetailField>
-            <DetailField label="First public">
-              {formatTimestamp(product.firstPublicAt)}
-            </DetailField>
-            <DetailField label="Out-of-stock confirmations">
-              {product.outOfStockConfirmations}
-            </DetailField>
-            <DetailField label="Watch status">
-              {product.isRetired ? "retired" : "active"}
-            </DetailField>
-          </dl>
-        </article>
+        <Card>
+          <CardHeader>
+            <CardTitle>Curated state</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl>
+              <DetailField label="Availability state">
+                <StatusChip
+                  value={availabilityLabel(product.availabilityState)}
+                />
+              </DetailField>
+              <DetailField label="Collection">
+                {product.collection ?? "none"}
+              </DetailField>
+              <DetailField label="Price">{product.price ?? "none"}</DetailField>
+              <DetailField label="Available sizes">
+                {product.availableSizes.length > 0
+                  ? product.availableSizes.join(", ")
+                  : "none"}
+              </DetailField>
+              <DetailField label="First seen">
+                {formatTimestamp(product.firstSeenAt)}
+              </DetailField>
+              <DetailField label="Last seen">
+                {formatTimestamp(product.lastSeenAt)}
+              </DetailField>
+              <DetailField label="First public">
+                {formatTimestamp(product.firstPublicAt)}
+              </DetailField>
+              <DetailField label="Out-of-stock confirmations">
+                {product.outOfStockConfirmations}
+              </DetailField>
+              <DetailField label="Watch status">
+                {product.isRetired ? "retired" : "active"}
+              </DetailField>
+            </dl>
+          </CardContent>
+        </Card>
       </section>
 
-      <section className="detail-columns">
-        <article className="detail-panel">
-          <h2>Product overrides</h2>
-          {product.override ? (
-            <>
-              <ChipList values={product.overrideBadges} />
-              {product.override.annotation ? (
-                <p>{product.override.annotation}</p>
-              ) : null}
-            </>
-          ) : (
-            <p className="muted-text">No Product override is recorded.</p>
-          )}
-        </article>
-
-        <article className="detail-panel">
-          <h2>Recent Product Events</h2>
-          {product.recentEvents.length > 0 ? (
-            <ul className="event-list">
-              {product.recentEvents.map((event) => (
-                <li key={event.id}>
-                  <span>{event.eventType}</span>
-                  <strong>{event.notificationStatus}</strong>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted-text">No recent Product Events.</p>
-          )}
-        </article>
-      </section>
-
-      <section className="detail-panel evidence-panel">
-        <button
-          className="ghost-button"
-          type="button"
-          onClick={() => setIsSnapshotOpen((open) => !open)}
-        >
-          Snapshot and fingerprint
-        </button>
-        {isSnapshotOpen ? (
-          <pre>
-            {JSON.stringify(
-              {
-                normalizedSnapshot: product.normalizedSnapshot,
-                rawFingerprint: product.rawFingerprint,
-              },
-              null,
-              2,
+      <section className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Product overrides</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {product.override ? (
+              <>
+                <ChipList values={product.overrideBadges} />
+                {product.override.annotation ? (
+                  <p>{product.override.annotation}</p>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No Product override is recorded.
+              </p>
             )}
-          </pre>
-        ) : null}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Product Events</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {product.recentEvents.length > 0 ? (
+              <ul className="flex flex-col gap-2">
+                {product.recentEvents.map((event) => (
+                  <li
+                    className="flex items-center justify-between gap-3"
+                    key={event.id}
+                  >
+                    <span>{event.eventType}</span>
+                    <strong>{event.notificationStatus}</strong>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No recent Product Events.
+              </p>
+            )}
+          </CardContent>
+        </Card>
       </section>
-    </>
+
+      <Card>
+        <Collapsible open={isSnapshotOpen} onOpenChange={setIsSnapshotOpen}>
+          <CardHeader>
+            <CardTitle>Snapshot and fingerprint</CardTitle>
+            <CollapsibleTrigger asChild>
+              <Button size="sm" type="button" variant="outline">
+                Snapshot and fingerprint
+              </Button>
+            </CollapsibleTrigger>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent>
+              <pre className="max-h-96 overflow-auto rounded-lg bg-muted p-3 text-xs">
+                {JSON.stringify(
+                  {
+                    normalizedSnapshot: product.normalizedSnapshot,
+                    rawFingerprint: product.rawFingerprint,
+                  },
+                  null,
+                  2,
+                )}
+              </pre>
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
+    </div>
   );
 }
 
@@ -859,151 +1121,117 @@ function EventsPage({
   };
 
   return (
-    <>
-      <header className="dashboard-header">
-        <div>
-          <p className="ledger-label">Watcher dashboard</p>
-          <h1>Events</h1>
-        </div>
-        <button type="button" onClick={refreshNow}>
-          {isRefreshing ? "Refreshing..." : "Refresh Events"}
-        </button>
-      </header>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        actionLabel="Refresh Events"
+        isRefreshing={isRefreshing}
+        title="Events"
+        onRefresh={refreshNow}
+      />
 
-      <section className="product-toolbar" aria-label="Event filters">
-        <label>
-          Event type
-          <input
-            name="event-type"
-            value={tableState.eventType ?? ""}
-            onInput={(event) =>
-              updateTableState({
-                eventType: event.currentTarget.value || undefined,
-                page: 1,
-              })
-            }
-          />
-        </label>
-        <label>
-          Product
-          <input
-            name="event-product"
-            value={tableState.productId ?? ""}
-            onInput={(event) =>
-              updateTableState({
-                productId: event.currentTarget.value || undefined,
-                page: 1,
-              })
-            }
-          />
-        </label>
-        <label>
-          Notification status
-          <select
-            value={tableState.notificationStatus ?? "all"}
-            onChange={(event) =>
-              updateTableState({
-                notificationStatus: parseNotificationStatus(
-                  event.currentTarget.value,
-                ),
-                page: 1,
-              })
-            }
-          >
-            <option value="all">All statuses</option>
-            {NOTIFICATION_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Rows
-          <select
-            aria-label="Event rows per page"
-            onChange={(event) =>
-              updateTableState({
-                pageSize: Number(event.currentTarget.value),
-                page: 1,
-              })
-            }
-            value={tableState.pageSize}
-          >
-            {EVENT_PAGE_SIZE_OPTIONS.map((pageSize) => (
-              <option key={pageSize} value={pageSize}>
-                {pageSize}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Sort
-          <select
-            value={`${tableState.sortBy}.${tableState.sortDirection}`}
-            onChange={(event) => {
-              const [sortBy, sortDirection] =
-                event.currentTarget.value.split(".");
-              updateTableState({
-                sortBy: parseEventSort(sortBy),
-                sortDirection: sortDirection === "asc" ? "asc" : "desc",
-                page: 1,
-              });
-            }}
-          >
-            <option value="createdAt.desc">Created, newest</option>
-            <option value="createdAt.asc">Created, oldest</option>
-            <option value="notifiedAt.desc">Notified, newest</option>
-            <option value="eventType.asc">Event type</option>
-            <option value="notificationStatus.asc">Notification status</option>
-            <option value="attemptCount.desc">Attempt count</option>
-          </select>
-        </label>
-      </section>
+      <Toolbar label="Event filters">
+        <TextFilter
+          label="Event type"
+          name="event-type"
+          value={tableState.eventType ?? ""}
+          onChange={(value) =>
+            updateTableState({
+              eventType: value || undefined,
+              page: 1,
+            })
+          }
+        />
+        <TextFilter
+          label="Product"
+          name="event-product"
+          value={tableState.productId ?? ""}
+          onChange={(value) =>
+            updateTableState({
+              productId: value || undefined,
+              page: 1,
+            })
+          }
+        />
+        <SelectFilter
+          label="Notification status"
+          value={tableState.notificationStatus ?? "all"}
+          options={[
+            { value: "all", label: "All statuses" },
+            ...NOTIFICATION_STATUSES.map((status) => ({
+              value: status,
+              label: status,
+            })),
+          ]}
+          onChange={(value) =>
+            updateTableState({
+              notificationStatus: parseNotificationStatus(value),
+              page: 1,
+            })
+          }
+        />
+        <SelectFilter
+          ariaLabel="Event rows per page"
+          label="Rows"
+          value={String(tableState.pageSize)}
+          options={EVENT_PAGE_SIZE_OPTIONS.map((pageSize) => ({
+            value: String(pageSize),
+            label: String(pageSize),
+          }))}
+          onChange={(value) =>
+            updateTableState({
+              pageSize: Number(value),
+              page: 1,
+            })
+          }
+        />
+        <SelectFilter
+          label="Sort"
+          value={`${tableState.sortBy}.${tableState.sortDirection}`}
+          options={[
+            { value: "createdAt.desc", label: "Created, newest" },
+            { value: "createdAt.asc", label: "Created, oldest" },
+            { value: "notifiedAt.desc", label: "Notified, newest" },
+            { value: "eventType.asc", label: "Event type" },
+            { value: "notificationStatus.asc", label: "Notification status" },
+            { value: "attemptCount.desc", label: "Attempt count" },
+          ]}
+          onChange={(value) => {
+            const [sortBy, sortDirection] = value.split(".");
+            updateTableState({
+              sortBy: parseEventSort(sortBy),
+              sortDirection: sortDirection === "asc" ? "asc" : "desc",
+              page: 1,
+            });
+          }}
+        />
+      </Toolbar>
 
-      {error ? <p className="error-panel">{error}</p> : null}
+      {error ? <ErrorPanel message={error} /> : null}
 
       {events ? (
         <>
           <EventsTable events={events.events} />
-          <footer className="table-footer">
-            <span>
-              Page {events.pagination.page} of {events.pagination.totalPages},{" "}
-              {events.pagination.totalItems} Events
-            </span>
-            <span className="pagination-controls">
-              <button
-                className="ghost-button"
-                disabled={tableState.page <= 1}
-                type="button"
-                onClick={() =>
-                  updateTableState({ page: Math.max(1, tableState.page - 1) })
-                }
-              >
-                Previous page
-              </button>
-              <button
-                className="ghost-button"
-                disabled={tableState.page >= events.pagination.totalPages}
-                type="button"
-                onClick={() =>
-                  updateTableState({
-                    page: Math.min(
-                      events.pagination.totalPages,
-                      tableState.page + 1,
-                    ),
-                  })
-                }
-              >
-                Next page
-              </button>
-            </span>
-          </footer>
+          <PaginationFooter
+            canGoNext={tableState.page < events.pagination.totalPages}
+            canGoPrevious={tableState.page > 1}
+            label={`Page ${events.pagination.page} of ${events.pagination.totalPages}, ${events.pagination.totalItems} Events`}
+            onNext={() =>
+              updateTableState({
+                page: Math.min(
+                  events.pagination.totalPages,
+                  tableState.page + 1,
+                ),
+              })
+            }
+            onPrevious={() =>
+              updateTableState({ page: Math.max(1, tableState.page - 1) })
+            }
+          />
         </>
       ) : (
-        <section className="skeleton-table" aria-label="Loading Events" />
+        <LoadingTable label="Loading Events" />
       )}
-    </>
+    </div>
   );
 }
 
@@ -1017,7 +1245,9 @@ function EventsTable({ events }: { events: DashboardEventRow[] }) {
           <span>
             <a href={`/events/${row.original.id}`}>{row.original.eventType}</a>
             {isCandidateSignalEvent(row.original.eventType) ? (
-              <span className="stale-note">Candidate evidence</span>
+              <Badge className="ml-2" variant="outline">
+                Candidate evidence
+              </Badge>
             ) : null}
           </span>
         ),
@@ -1103,64 +1333,85 @@ function EventDetailPage({
   );
 
   if (error) {
-    return <p className="error-panel">{error}</p>;
+    return <ErrorPanel message={error} />;
   }
 
   if (!event) {
-    return <section className="skeleton-panel" aria-label="Loading Event" />;
+    return <LoadingPanel label="Loading Event" />;
   }
 
   return (
-    <section className="detail-layout" aria-label={`Event ${event.id} detail`}>
-      <div className="detail-actions">
-        <a className="back-link" href="/events">
-          Back to Events
-        </a>
-        <button type="button" onClick={refreshNow}>
-          {isRefreshing ? "Refreshing..." : "Refresh Event"}
-        </button>
-      </div>
-      <article className="detail-panel">
-        <div className="detail-title">
-          <h2>Event #{event.id}</h2>
-          <StatusChip value={event.notificationStatus} />
-        </div>
-        {isCandidateSignalEvent(event.eventType) ? (
-          <p className="warning-text">
-            Candidate evidence, not confirmed availability.
-          </p>
-        ) : null}
-        <dl>
-          <DetailField label="Event type">{event.eventType}</DetailField>
-          <DetailField label="Product">
-            <EventProductLink event={event} />
-          </DetailField>
-          <DetailField label="Attempts">{event.attemptCount}</DetailField>
-          <DetailField label="Last attempt">
-            {formatTimestamp(event.lastAttemptAt)}
-          </DetailField>
-          <DetailField label="Created">
-            {formatTimestamp(event.createdAt)}
-          </DetailField>
-          <DetailField label="Notified">
-            {formatTimestamp(event.notifiedAt)}
-          </DetailField>
-        </dl>
-      </article>
-      <article className="detail-panel evidence-panel">
-        <h2>Payload JSON</h2>
-        <pre>{JSON.stringify(event.payload, null, 2)}</pre>
-      </article>
-      <article className="detail-panel evidence-panel">
-        <h2>Notification error</h2>
-        {event.notificationError ? (
-          <pre>{event.notificationError}</pre>
-        ) : (
-          <p className="muted-text">
-            No notification error persisted for this Event.
-          </p>
-        )}
-      </article>
+    <section
+      className="flex flex-col gap-5"
+      aria-label={`Event ${event.id} detail`}
+    >
+      <PageHeader
+        actionLabel="Refresh Event"
+        backHref="/events"
+        backLabel="Back to Events"
+        isRefreshing={isRefreshing}
+        title={`Event #${event.id}`}
+        onRefresh={refreshNow}
+      />
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            Event #{event.id}
+            <StatusChip value={event.notificationStatus} />
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isCandidateSignalEvent(event.eventType) ? (
+            <Alert className="mb-4">
+              <AlertDescription>
+                Candidate evidence, not confirmed availability.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <dl>
+            <DetailField label="Event type">{event.eventType}</DetailField>
+            <DetailField label="Product">
+              <EventProductLink event={event} />
+            </DetailField>
+            <DetailField label="Attempts">{event.attemptCount}</DetailField>
+            <DetailField label="Last attempt">
+              {formatTimestamp(event.lastAttemptAt)}
+            </DetailField>
+            <DetailField label="Created">
+              {formatTimestamp(event.createdAt)}
+            </DetailField>
+            <DetailField label="Notified">
+              {formatTimestamp(event.notifiedAt)}
+            </DetailField>
+          </dl>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Payload JSON</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <pre className="max-h-96 overflow-auto rounded-lg bg-muted p-3 text-xs">
+            {JSON.stringify(event.payload, null, 2)}
+          </pre>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Notification error</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {event.notificationError ? (
+            <pre className="max-h-96 overflow-auto rounded-lg bg-muted p-3 text-xs">
+              {event.notificationError}
+            </pre>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No notification error persisted for this Event.
+            </p>
+          )}
+        </CardContent>
+      </Card>
     </section>
   );
 }
@@ -1206,123 +1457,92 @@ function RunsPage({
   };
 
   return (
-    <>
-      <header className="dashboard-header">
-        <div>
-          <p className="ledger-label">Watcher dashboard</p>
-          <h1>Runs</h1>
-        </div>
-        <button type="button" onClick={refreshNow}>
-          {isRefreshing ? "Refreshing..." : "Refresh Runs"}
-        </button>
-      </header>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        actionLabel="Refresh Runs"
+        isRefreshing={isRefreshing}
+        title="Runs"
+        onRefresh={refreshNow}
+      />
 
-      <section className="product-toolbar" aria-label="Run filters">
-        <label>
-          Status
-          <select
-            aria-label="Run status"
-            onChange={(event) =>
-              updateTableState({
-                status: parseRunStatus(event.currentTarget.value),
-                page: 1,
-              })
-            }
-            value={tableState.status ?? "all"}
-          >
-            <option value="all">All statuses</option>
-            {RUN_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Rows
-          <select
-            aria-label="Rows per page"
-            onChange={(event) =>
-              updateTableState({
-                pageSize: Number(event.currentTarget.value),
-                page: 1,
-              })
-            }
-            value={tableState.pageSize}
-          >
-            {RUN_PAGE_SIZE_OPTIONS.map((pageSize) => (
-              <option key={pageSize} value={pageSize}>
-                {pageSize}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Sort
-          <select
-            value={`${tableState.sortBy}.${tableState.sortDirection}`}
-            onChange={(event) => {
-              const [sortBy, sortDirection] =
-                event.currentTarget.value.split(".");
-              updateTableState({
-                sortBy: parseRunSort(sortBy),
-                sortDirection: sortDirection === "asc" ? "asc" : "desc",
-                page: 1,
-              });
-            }}
-          >
-            <option value="startedAt.desc">Started, newest</option>
-            <option value="startedAt.asc">Started, oldest</option>
-            <option value="finishedAt.desc">Finished, newest</option>
-            <option value="status.asc">Status</option>
-            <option value="productCount.desc">Product count</option>
-          </select>
-        </label>
-      </section>
+      <Toolbar label="Run filters">
+        <SelectFilter
+          ariaLabel="Run status"
+          label="Status"
+          value={tableState.status ?? "all"}
+          options={[
+            { value: "all", label: "All statuses" },
+            ...RUN_STATUSES.map((status) => ({
+              value: status,
+              label: status,
+            })),
+          ]}
+          onChange={(value) =>
+            updateTableState({
+              status: parseRunStatus(value),
+              page: 1,
+            })
+          }
+        />
+        <SelectFilter
+          ariaLabel="Rows per page"
+          label="Rows"
+          value={String(tableState.pageSize)}
+          options={RUN_PAGE_SIZE_OPTIONS.map((pageSize) => ({
+            value: String(pageSize),
+            label: String(pageSize),
+          }))}
+          onChange={(value) =>
+            updateTableState({
+              pageSize: Number(value),
+              page: 1,
+            })
+          }
+        />
+        <SelectFilter
+          label="Sort"
+          value={`${tableState.sortBy}.${tableState.sortDirection}`}
+          options={[
+            { value: "startedAt.desc", label: "Started, newest" },
+            { value: "startedAt.asc", label: "Started, oldest" },
+            { value: "finishedAt.desc", label: "Finished, newest" },
+            { value: "status.asc", label: "Status" },
+            { value: "productCount.desc", label: "Product count" },
+          ]}
+          onChange={(value) => {
+            const [sortBy, sortDirection] = value.split(".");
+            updateTableState({
+              sortBy: parseRunSort(sortBy),
+              sortDirection: sortDirection === "asc" ? "asc" : "desc",
+              page: 1,
+            });
+          }}
+        />
+      </Toolbar>
 
-      {error ? <p className="error-panel">{error}</p> : null}
+      {error ? <ErrorPanel message={error} /> : null}
 
       {runs ? (
         <>
           <RunsTable runs={runs.runs} />
-          <footer className="table-footer">
-            <span>
-              Page {runs.pagination.page} of {runs.pagination.totalPages},{" "}
-              {runs.pagination.totalItems} Runs
-            </span>
-            <span className="pagination-controls">
-              <button
-                className="ghost-button"
-                disabled={tableState.page <= 1}
-                type="button"
-                onClick={() =>
-                  updateTableState({ page: Math.max(1, tableState.page - 1) })
-                }
-              >
-                Previous page
-              </button>
-              <button
-                className="ghost-button"
-                disabled={tableState.page >= runs.pagination.totalPages}
-                type="button"
-                onClick={() =>
-                  updateTableState({
-                    page: Math.min(
-                      runs.pagination.totalPages,
-                      tableState.page + 1,
-                    ),
-                  })
-                }
-              >
-                Next page
-              </button>
-            </span>
-          </footer>
+          <PaginationFooter
+            canGoNext={tableState.page < runs.pagination.totalPages}
+            canGoPrevious={tableState.page > 1}
+            label={`Page ${runs.pagination.page} of ${runs.pagination.totalPages}, ${runs.pagination.totalItems} Runs`}
+            onNext={() =>
+              updateTableState({
+                page: Math.min(runs.pagination.totalPages, tableState.page + 1),
+              })
+            }
+            onPrevious={() =>
+              updateTableState({ page: Math.max(1, tableState.page - 1) })
+            }
+          />
         </>
       ) : (
-        <section className="skeleton-table" aria-label="Loading Runs" />
+        <LoadingTable label="Loading Runs" />
       )}
-    </>
+    </div>
   );
 }
 
@@ -1336,9 +1556,9 @@ function RunsTable({ runs }: { runs: DashboardRunRow[] }) {
           <span>
             <StatusChip value={row.original.status} />
             {row.original.staleRunning ? (
-              <span className="stale-note">
+              <Badge className="ml-2" variant="outline">
                 Stale-looking, {row.original.staleRunning.minutesSinceStart}m
-              </span>
+              </Badge>
             ) : null}
           </span>
         ),
@@ -1417,55 +1637,72 @@ function RunDetailPage({
   );
 
   if (error) {
-    return <p className="error-panel">{error}</p>;
+    return <ErrorPanel message={error} />;
   }
 
   if (!run) {
-    return <section className="skeleton-panel" aria-label="Loading Run" />;
+    return <LoadingPanel label="Loading Run" />;
   }
 
   return (
-    <section className="detail-layout" aria-label={`Run ${run.id} detail`}>
-      <div className="detail-actions">
-        <a className="back-link" href="/runs">
-          Back to Runs
-        </a>
-        <button type="button" onClick={refreshNow}>
-          {isRefreshing ? "Refreshing..." : "Refresh Run"}
-        </button>
-      </div>
-      <article className="detail-panel">
-        <div className="detail-title">
-          <h2>Run #{run.id}</h2>
-          <StatusChip value={run.status} />
-        </div>
-        {run.staleRunning ? (
-          <p className="warning-text">
-            This Run looks stale from persisted timestamps:{" "}
-            {run.staleRunning.minutesSinceStart} minutes since start.
-          </p>
-        ) : null}
-        <dl>
-          <DetailField label="Started">
-            {formatTimestamp(run.startedAt)}
-          </DetailField>
-          <DetailField label="Finished">
-            {formatTimestamp(run.finishedAt)}
-          </DetailField>
-          <DetailField label="Duration">
-            {formatDuration(run.durationMs)}
-          </DetailField>
-          <DetailField label="Products seen">{run.productCount}</DetailField>
-        </dl>
-      </article>
-      <article className="detail-panel">
-        <h2>Error message</h2>
-        {run.errorMessage ? (
-          <pre>{run.errorMessage}</pre>
-        ) : (
-          <p className="muted-text">No error message persisted for this Run.</p>
-        )}
-      </article>
+    <section
+      className="flex flex-col gap-5"
+      aria-label={`Run ${run.id} detail`}
+    >
+      <PageHeader
+        actionLabel="Refresh Run"
+        backHref="/runs"
+        backLabel="Back to Runs"
+        isRefreshing={isRefreshing}
+        title={`Run #${run.id}`}
+        onRefresh={refreshNow}
+      />
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex flex-wrap items-center gap-2">
+            Run #{run.id}
+            <StatusChip value={run.status} />
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {run.staleRunning ? (
+            <Alert className="mb-4">
+              <AlertDescription>
+                This Run looks stale from persisted timestamps:{" "}
+                {run.staleRunning.minutesSinceStart} minutes since start.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <dl>
+            <DetailField label="Started">
+              {formatTimestamp(run.startedAt)}
+            </DetailField>
+            <DetailField label="Finished">
+              {formatTimestamp(run.finishedAt)}
+            </DetailField>
+            <DetailField label="Duration">
+              {formatDuration(run.durationMs)}
+            </DetailField>
+            <DetailField label="Products seen">{run.productCount}</DetailField>
+          </dl>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Error message</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {run.errorMessage ? (
+            <pre className="max-h-96 overflow-auto rounded-lg bg-muted p-3 text-xs">
+              {run.errorMessage}
+            </pre>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No error message persisted for this Run.
+            </p>
+          )}
+        </CardContent>
+      </Card>
     </section>
   );
 }
@@ -1502,21 +1739,21 @@ function SummaryPage({
   );
 
   return (
-    <>
-      <header className="dashboard-header">
-        <div>
-          <p className="ledger-label">Watcher dashboard</p>
-          <h1>Supplywatch summary</h1>
-        </div>
-        <button type="button" onClick={refreshNow}>
-          {isRefreshing ? "Refreshing..." : "Refresh summary"}
-        </button>
-      </header>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        actionLabel="Refresh summary"
+        isRefreshing={isRefreshing}
+        title="Supplywatch summary"
+        onRefresh={refreshNow}
+      />
 
-      {error ? <p className="error-panel">{error}</p> : null}
+      {error ? <ErrorPanel message={error} /> : null}
 
       {summary ? (
-        <section className="summary-grid" aria-label="Watcher summary">
+        <section
+          className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
+          aria-label="Watcher summary"
+        >
           <SummaryPanel title="Latest Run">
             <StatusChip value={summary.latestRun?.status ?? "none"} />
             <dl>
@@ -1545,12 +1782,16 @@ function SummaryPage({
 
           <SummaryPanel title="Run Health">
             {summary.staleRunningRun ? (
-              <p className="warning-text">
-                Run #{summary.staleRunningRun.id} has been running for{" "}
-                {summary.staleRunningRun.minutesSinceStart} minutes.
-              </p>
+              <Alert>
+                <AlertDescription>
+                  Run #{summary.staleRunningRun.id} has been running for{" "}
+                  {summary.staleRunningRun.minutesSinceStart} minutes.
+                </AlertDescription>
+              </Alert>
             ) : (
-              <p className="muted-text">No stale-looking running Run.</p>
+              <p className="text-sm text-muted-foreground">
+                No stale-looking running Run.
+              </p>
             )}
             <dl>
               <DetailField label="Health Events">
@@ -1561,32 +1802,40 @@ function SummaryPage({
 
           <SummaryPanel title="Health Event Types">
             {summary.healthEvents.byType.length > 0 ? (
-              <ul className="event-list">
+              <ul className="flex flex-col gap-2">
                 {summary.healthEvents.byType.map((event) => (
-                  <li key={event.eventType}>
+                  <li
+                    className="flex items-center justify-between gap-3"
+                    key={event.eventType}
+                  >
                     <span>{event.eventType}</span>
                     <strong>{event.count}</strong>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="muted-text">No persisted health Events.</p>
+              <p className="text-sm text-muted-foreground">
+                No persisted health Events.
+              </p>
             )}
           </SummaryPanel>
         </section>
       ) : (
-        <section className="summary-grid" aria-label="Loading summary">
-          <div className="skeleton-panel" />
-          <div className="skeleton-panel" />
-          <div className="skeleton-panel" />
+        <section
+          className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
+          aria-label="Loading summary"
+        >
+          <LoadingPanel label="Loading latest Run" />
+          <LoadingPanel label="Loading notifications" />
+          <LoadingPanel label="Loading health" />
         </section>
       )}
 
-      <footer>
+      <footer className="text-sm text-muted-foreground">
         Last refreshed:{" "}
         {summary ? formatTimestamp(summary.generatedAt) : "not yet"}
       </footer>
-    </>
+    </div>
   );
 }
 
@@ -1953,9 +2202,12 @@ function EventProductLink({
 
 function ProductIdentity({ product }: { product: DashboardProductRow }) {
   return (
-    <div className="product-identity">
+    <div className="flex min-w-0 items-center gap-3">
       <ProductImage product={product} compact />
-      <a href={`/products/${encodeURIComponent(product.stableId)}`}>
+      <a
+        className="truncate font-medium underline-offset-4 hover:underline"
+        href={`/products/${encodeURIComponent(product.stableId)}`}
+      >
         {product.name ?? product.stableId}
       </a>
     </div>
@@ -1971,39 +2223,38 @@ function ProductImage({
 }) {
   const [failed, setFailed] = useState(false);
 
+  if (compact) {
+    return (
+      <Avatar>
+        {product.imageUrl && !failed ? (
+          <AvatarImage
+            alt={product.name ?? product.stableId}
+            src={product.imageUrl}
+            onError={() => setFailed(true)}
+          />
+        ) : null}
+        <AvatarFallback>NA</AvatarFallback>
+      </Avatar>
+    );
+  }
+
   if (!product.imageUrl || failed) {
     return (
-      <div
-        className={
-          compact ? "product-thumb fallback" : "product-image fallback"
-        }
-      >
-        Image unavailable
-      </div>
+      <Card className="aspect-square min-h-56 items-center justify-center">
+        <CardContent className="text-sm text-muted-foreground">
+          Image unavailable
+        </CardContent>
+      </Card>
     );
   }
 
   return (
     <img
       alt={product.name ?? product.stableId}
-      className={compact ? "product-thumb" : "product-image"}
+      className="aspect-square min-h-56 w-full rounded-xl object-cover ring-1 ring-foreground/10"
       src={product.imageUrl}
       onError={() => setFailed(true)}
     />
-  );
-}
-
-function DashboardTable({
-  children,
-  style,
-}: {
-  children: ReactNode;
-  style?: CSSProperties;
-}) {
-  return (
-    <table className="product-table" style={style}>
-      {children}
-    </table>
   );
 }
 
@@ -2015,10 +2266,12 @@ function SummaryPanel({
   children: ReactNode;
 }) {
   return (
-    <article className="summary-panel">
-      <h2>{title}</h2>
-      {children}
-    </article>
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">{children}</CardContent>
+    </Card>
   );
 }
 
@@ -2030,27 +2283,42 @@ function DetailField({
   children: ReactNode;
 }) {
   return (
-    <div>
-      <dt>{label}</dt>
-      <dd>{children}</dd>
+    <div className="grid gap-1 py-2 sm:grid-cols-[180px_1fr]">
+      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-sm font-medium">{children}</dd>
     </div>
   );
 }
 
 function StatusChip({ value }: { value: string }) {
-  return <span className={`status-chip status-chip-${value}`}>{value}</span>;
+  return <Badge variant={statusVariant(value)}>{value}</Badge>;
 }
 
 function ChipList({ values }: { values: string[] }) {
   return (
-    <span className="chip-list">
+    <span className="flex flex-wrap gap-2">
       {values.map((value) => (
-        <span className="status-chip" key={value}>
+        <Badge variant="outline" key={value}>
           {value}
-        </span>
+        </Badge>
       ))}
     </span>
   );
+}
+
+function statusVariant(
+  value: string,
+): "default" | "secondary" | "destructive" | "outline" {
+  if (value === "failed") {
+    return "destructive";
+  }
+  if (value === "publicly_buyable" || value === "Publicly available") {
+    return "default";
+  }
+  if (value === "unknown" || value === "none") {
+    return "outline";
+  }
+  return "secondary";
 }
 
 function availabilityLabel(value: BuyableState): string {

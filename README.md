@@ -14,6 +14,7 @@ supplywatch renders the public Supply site with Playwright, watches product card
 - Cheerio as an HTML parsing fallback
 - SQLite via `better-sqlite3` with Drizzle state migrations
 - Discord webhooks
+- Vite/React local Watcher dashboard
 - Docker for deployment
 
 ## Local Setup
@@ -24,6 +25,18 @@ cp .env.example .env
 pnpm playwright:install
 pnpm db:migrate
 pnpm dev poll-once
+```
+
+This repo is a pnpm workspace. The root package runs the headless watcher and
+coordinates workspace verification; `packages/state` contains shared SQLite
+state code; `packages/dashboard` contains the local read-only Watcher dashboard.
+
+If you switch Node versions after installing dependencies and SQLite tests fail
+with a `better-sqlite3` `NODE_MODULE_VERSION` mismatch, rebuild the native
+module for the active Node runtime:
+
+```bash
+pnpm rebuild better-sqlite3
 ```
 
 `DRY_RUN=true` is the default. A dry run prints would-send Discord payloads but leaves pending alert state intact, so confirmed alerts can still send later when Discord is enabled.
@@ -59,7 +72,9 @@ pnpm start
 pnpm typecheck
 pnpm test
 pnpm verify
-pnpm watcher:verify
+pnpm watcher:verify       # watcher/state checks without requiring dashboard runtime
+pnpm dashboard:dev        # dashboard API + Vite UI on localhost
+pnpm dashboard:verify     # dashboard-focused typecheck/build/tests
 ```
 
 Fixture capture renders the supplied product/detail URL with Playwright and saves
@@ -97,11 +112,12 @@ pnpm dashboard:verify
 ```
 
 `DASHBOARD_DATABASE_PATH` is preferred for the dashboard. `DATABASE_PATH` is
-accepted as a local fallback. `dashboard:dev` runs the Vite frontend with `/api`
-proxied to the local dashboard API server on port 4174; `dashboard:start` serves
-the built dashboard assets and API routes from one local Node process. The
-summary, Products, Events, and Runs pages refresh automatically with manual
-refresh actions.
+accepted as a local fallback, and `.env` is loaded by the dashboard server.
+`dashboard:dev` starts the local dashboard API server on port 4174 and the Vite
+frontend with `/api` proxied to that server. `dashboard:start` serves the built
+dashboard assets and API routes from one local Node process. The summary,
+Products, Events, and Runs pages refresh automatically with manual refresh
+actions.
 
 ## Docker
 
