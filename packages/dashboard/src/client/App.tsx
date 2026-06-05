@@ -31,6 +31,8 @@ import {
   type ColumnDef,
   flexRender,
   getCoreRowModel,
+  type Table as ReactTable,
+  type RowData,
   useReactTable,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -479,7 +481,7 @@ function ProductsPage({
 
       {page ? (
         <>
-          <VirtualizedProductTable table={table} />
+          <VirtualizedTable rowHeight={72} table={table} />
           <footer className="table-footer">
             <span>
               Page {page.page} of {page.totalPages}, {page.total} Products
@@ -521,17 +523,19 @@ function ProductsPage({
   );
 }
 
-function VirtualizedProductTable({
+function VirtualizedTable<TData extends RowData>({
+  rowHeight,
   table,
 }: {
-  table: ReturnType<typeof useReactTable<DashboardProductRow>>;
+  rowHeight: number;
+  table: ReactTable<TData>;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const rows = table.getRowModel().rows;
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 72,
+    estimateSize: () => rowHeight,
     overscan: 8,
   });
   const virtualRows = virtualizer.getVirtualItems();
@@ -543,12 +547,14 @@ function VirtualizedProductTable({
         }))
       : rows.map((row, index) => ({
           row,
-          transform: `translateY(${index * 72}px)`,
+          transform: `translateY(${index * rowHeight}px)`,
         }));
 
   return (
     <div className="table-viewport" ref={parentRef}>
-      <Table style={{ minHeight: `${Math.max(rows.length, 1) * 72}px` }}>
+      <DashboardTable
+        style={{ minHeight: `${Math.max(rows.length, 1) * rowHeight}px` }}
+      >
         <thead>
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
@@ -576,7 +582,7 @@ function VirtualizedProductTable({
             ) : null,
           )}
         </tbody>
-      </Table>
+      </DashboardTable>
     </div>
   );
 }
@@ -977,59 +983,8 @@ function EventsTable({ events }: { events: DashboardEventRow[] }) {
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
-  const parentRef = useRef<HTMLDivElement>(null);
-  const rows = table.getRowModel().rows;
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 56,
-    overscan: 8,
-  });
-  const virtualRows = virtualizer.getVirtualItems();
-  const visibleRows =
-    virtualRows.length > 0
-      ? virtualRows.map((virtualRow) => ({
-          row: rows[virtualRow.index],
-          transform: `translateY(${virtualRow.start}px)`,
-        }))
-      : rows.map((row, index) => ({
-          row,
-          transform: `translateY(${index * 56}px)`,
-        }));
 
-  return (
-    <div className="table-viewport" ref={parentRef}>
-      <Table style={{ minHeight: `${Math.max(rows.length, 1) * 56}px` }}>
-        <thead>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <th key={header.id}>
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext(),
-                  )}
-                </th>
-              ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody>
-          {visibleRows.map(({ row, transform }) =>
-            row ? (
-              <tr key={row.id} style={{ transform }}>
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ) : null,
-          )}
-        </tbody>
-      </Table>
-    </div>
-  );
+  return <VirtualizedTable rowHeight={56} table={table} />;
 }
 
 function EventDetailPage({
@@ -1327,59 +1282,8 @@ function RunsTable({ runs }: { runs: DashboardRunRow[] }) {
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
-  const parentRef = useRef<HTMLDivElement>(null);
-  const rows = table.getRowModel().rows;
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 56,
-    overscan: 8,
-  });
-  const virtualRows = virtualizer.getVirtualItems();
-  const visibleRows =
-    virtualRows.length > 0
-      ? virtualRows.map((virtualRow) => ({
-          row: rows[virtualRow.index],
-          transform: `translateY(${virtualRow.start}px)`,
-        }))
-      : rows.map((row, index) => ({
-          row,
-          transform: `translateY(${index * 56}px)`,
-        }));
 
-  return (
-    <div className="table-viewport" ref={parentRef}>
-      <Table style={{ minHeight: `${Math.max(rows.length, 1) * 56}px` }}>
-        <thead>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <th key={header.id}>
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext(),
-                  )}
-                </th>
-              ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody>
-          {visibleRows.map(({ row, transform }) =>
-            row ? (
-              <tr key={row.id} style={{ transform }}>
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ) : null,
-          )}
-        </tbody>
-      </Table>
-    </div>
-  );
+  return <VirtualizedTable rowHeight={56} table={table} />;
 }
 
 function RunDetailPage({
@@ -1992,7 +1896,7 @@ function ProductImage({
   );
 }
 
-function Table({
+function DashboardTable({
   children,
   style,
 }: {

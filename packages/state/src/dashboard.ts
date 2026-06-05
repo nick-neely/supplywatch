@@ -12,7 +12,6 @@ const MAX_EVENTS_PAGE_SIZE = 200;
 const DEFAULT_RUN_SORT_BY = "startedAt";
 const DEFAULT_EVENT_SORT_BY = "createdAt";
 const DEFAULT_RUN_SORT_DIRECTION = "desc";
-const DEFAULT_EVENT_SORT_DIRECTION = "desc";
 const RUN_SORT_EXPRESSIONS = {
   finishedAt: "finished_at",
   productCount: "product_count",
@@ -455,7 +454,8 @@ export function listDashboardEvents(
   const totalItems = countEvents(database, where);
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const sortBy = normalizeEventSortBy(options.sortBy);
-  const sortDirection = normalizeEventSortDirection(options.sortDirection);
+  const sortDirection = normalizeSortDirection(options.sortDirection);
+  const offset = (page - 1) * pageSize;
   const rows = database
     .prepare<Record<string, unknown>, EventSqlRow>(
       `
@@ -470,7 +470,7 @@ export function listDashboardEvents(
     .all({
       ...where.parameters,
       limit: pageSize,
-      offset: (page - 1) * pageSize,
+      offset,
     });
 
   return {
@@ -930,12 +930,6 @@ function normalizeEventSortBy(
     default:
       return DEFAULT_EVENT_SORT_BY;
   }
-}
-
-function normalizeEventSortDirection(
-  sortDirection: DashboardSortDirection | undefined,
-): DashboardSortDirection {
-  return sortDirection === "asc" ? "asc" : DEFAULT_EVENT_SORT_DIRECTION;
 }
 
 function runSortExpression(sortBy: DashboardRunSortBy): string {

@@ -153,17 +153,7 @@ function handleRequest(
   }
 
   if (url.pathname === "/api/events") {
-    const events = listDashboardEvents(state.database, {
-      eventType: optionalParam(url.searchParams.get("eventType")),
-      notificationStatus: parseNotificationStatus(
-        url.searchParams.get("notificationStatus"),
-      ),
-      productId: optionalParam(url.searchParams.get("productId")),
-      sortBy: parseEventSortBy(url.searchParams.get("sort")),
-      sortDirection: parseSortDirection(url.searchParams.get("direction")),
-      page: positiveInteger(url.searchParams.get("page")),
-      pageSize: positiveInteger(url.searchParams.get("pageSize")),
-    });
+    const events = listDashboardEvents(state.database, eventListOptions(url));
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify(events));
     return;
@@ -244,6 +234,20 @@ function productListOptions(
         ? true
         : undefined,
     sort: productSort(url.searchParams.get("sort")),
+    page: positiveInteger(url.searchParams.get("page")),
+    pageSize: positiveInteger(url.searchParams.get("pageSize")),
+  };
+}
+
+function eventListOptions(url: URL): Parameters<typeof listDashboardEvents>[1] {
+  return {
+    eventType: optionalParam(url.searchParams.get("eventType")),
+    notificationStatus: parseNotificationStatus(
+      url.searchParams.get("notificationStatus"),
+    ),
+    productId: optionalParam(url.searchParams.get("productId")),
+    sortBy: parseEventSortBy(url.searchParams.get("sort")),
+    sortDirection: parseSortDirection(url.searchParams.get("direction")),
     page: positiveInteger(url.searchParams.get("page")),
     pageSize: positiveInteger(url.searchParams.get("pageSize")),
   };
