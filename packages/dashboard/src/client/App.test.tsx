@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { formatTimestamp } from "@/lib/format-timestamp";
 import {
   App,
   type EventDetailFetcher,
@@ -78,7 +79,9 @@ describe("Watcher dashboard app", () => {
     expect(fetchSummary).toHaveBeenCalledTimes(2);
     expect(container.textContent).toContain("completed");
     expect(container.textContent).toContain("7");
-    expect(container.textContent).toContain("15:01:00");
+    expect(container.textContent).toContain(
+      formatTimestamp("2026-06-04T15:01:00.000Z"),
+    );
   });
 
   it("renders Products from URL-backed table state and preserves filter changes in the URL", async () => {
@@ -292,7 +295,7 @@ describe("Watcher dashboard app", () => {
     expect(container.textContent).not.toContain("fingerprint:tee-detail");
 
     await act(async () => {
-      clickButton(container, "Snapshot and fingerprint");
+      clickButton(container, "Show evidence");
     });
 
     expect(container.textContent).toContain("fingerprint:tee-detail");
