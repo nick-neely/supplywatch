@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
-import type { NotificationStatus, RunStatus } from "./types.js";
+import type { JsonObject, ProductOverride } from "./repository.js";
+import type { BuyableState, NotificationStatus, RunStatus } from "./types.js";
 
 const DEFAULT_STALE_RUNNING_RUN_MINUTES = 30;
 
@@ -47,6 +48,133 @@ type NotificationCountRow = {
   count: number;
 };
 
+export type DashboardProductSortField =
+  | "name"
+  | "collection"
+  | "price"
+  | "availabilityState"
+  | "lastSeenAt"
+  | "firstSeenAt";
+
+export type DashboardProductSort = {
+  field: DashboardProductSortField;
+  direction: "asc" | "desc";
+};
+
+export type DashboardProductWatchStatus = "active" | "retired" | "all";
+
+export type DashboardProductListOptions = {
+  search?: string;
+  availabilityStates?: BuyableState[];
+  watchStatus?: DashboardProductWatchStatus;
+  collection?: string;
+  notificationRelevant?: boolean;
+  sort?: DashboardProductSort;
+  page?: number;
+  pageSize?: number;
+};
+
+export type DashboardProductRow = {
+  stableId: string;
+  name: string | null;
+  url: string | null;
+  imageUrl: string | null;
+  collection: string | null;
+  price: string | null;
+  availabilityState: BuyableState;
+  availableSizes: string[];
+  firstSeenAt: string;
+  lastSeenAt: string;
+  firstPublicAt: string | null;
+  isRetired: boolean;
+  retiredAt: string | null;
+  retirementReason: string | null;
+  outOfStockConfirmations: number;
+  overrideBadges: string[];
+};
+
+export type DashboardProductPage = {
+  products: DashboardProductRow[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+export type DashboardProductEvent = {
+  id: number;
+  eventType: string;
+  payload: JsonObject;
+  notificationStatus: NotificationStatus;
+  attemptCount: number;
+  lastAttemptAt: string | null;
+  notificationError: string | null;
+  createdAt: string;
+  notifiedAt: string | null;
+};
+
+export type DashboardProductDetail = DashboardProductRow & {
+  sourceUrl: string | null;
+  description: string | null;
+  normalizedSnapshot: JsonObject;
+  rawFingerprint: string | null;
+  override: ProductOverride | null;
+  recentEvents: DashboardProductEvent[];
+};
+
+type ProductListSqlRow = {
+  stableId: string;
+  name: string | null;
+  url: string | null;
+  imageUrl: string | null;
+  collection: string | null;
+  price: string | null;
+  availabilityState: BuyableState;
+  availableSizesJson: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  firstPublicAt: string | null;
+  isRetired: 0 | 1;
+  retiredAt: string | null;
+  retirementReason: string | null;
+  outOfStockConfirmations: number;
+  denylisted: 0 | 1 | null;
+  forceRetired: 0 | 1 | null;
+  forceWatched: 0 | 1 | null;
+  knownEmployeeOnly: 0 | 1 | null;
+};
+
+type ProductDetailSqlRow = ProductListSqlRow & {
+  description: string | null;
+  normalizedSnapshotJson: string;
+  rawFingerprint: string | null;
+  annotation: string | null;
+};
+
+type ProductEventSqlRow = {
+  id: number;
+  eventType: string;
+  payloadJson: string;
+  notificationStatus: NotificationStatus;
+  attemptCount: number;
+  lastAttemptAt: string | null;
+  notificationError: string | null;
+  createdAt: string;
+  notifiedAt: string | null;
+};
+
+const PRODUCT_SORT_COLUMNS: Record<DashboardProductSortField, string> = {
+  name: "p.name",
+  collection: "p.collection",
+  price: "p.price",
+  availabilityState: "p.buyable_state",
+  lastSeenAt: "p.last_seen_at",
+  firstSeenAt: "p.first_seen_at",
+};
+
+const DEFAULT_PRODUCT_PAGE_SIZE = 50;
+const MAX_PRODUCT_PAGE_SIZE = 200;
+
 export function getWatcherDashboardSummary(
   database: Database.Database,
   options: WatcherDashboardSummaryOptions = {},
@@ -75,6 +203,128 @@ export function getWatcherDashboardSummary(
   };
 }
 
+export function getDashboardProducts(
+  database: Database.Database,
+  options: DashboardProductListOptions = {},
+): DashboardProductPage {
+  const page = Math.max(1, Math.floor(options.page ?? 1));
+  const pageSize = Math.min(
+    MAX_PRODUCT_PAGE_SIZE,
+    Math.max(1, Math.floor(options.pageSize ?? DEFAULT_PRODUCT_PAGE_SIZE)),
+  );
+  const where = buildProductWhereClause(options);
+  const total = database
+    .prepare<Record<string, unknown>, { count: number }>(
+      `
+        SELECT COUNT(*) AS count
+        FROM products p
+        LEFT JOIN product_overrides po ON po.product_id = p.stable_id
+        ${where.sql}
+      `,
+    )
+    .get(where.parameters)?.count;
+
+  const sort = options.sort ?? { field: "lastSeenAt", direction: "desc" };
+  const sortColumn = PRODUCT_SORT_COLUMNS[sort.field];
+  const sortDirection = sort.direction === "asc" ? "ASC" : "DESC";
+  const rows = database
+    .prepare<Record<string, unknown>, ProductListSqlRow>(
+      `
+        SELECT
+          p.stable_id AS stableId,
+          p.name,
+          p.url,
+          p.image_url AS imageUrl,
+          p.collection,
+          p.price,
+          p.buyable_state AS availabilityState,
+          p.available_sizes_json AS availableSizesJson,
+          p.first_seen_at AS firstSeenAt,
+          p.last_seen_at AS lastSeenAt,
+          p.first_public_at AS firstPublicAt,
+          CASE WHEN p.retired_at IS NULL THEN 0 ELSE 1 END AS isRetired,
+          p.retired_at AS retiredAt,
+          p.retirement_reason AS retirementReason,
+          p.out_of_stock_confirmations AS outOfStockConfirmations,
+          po.denylisted,
+          po.force_retired AS forceRetired,
+          po.force_watched AS forceWatched,
+          po.known_employee_only AS knownEmployeeOnly
+        FROM products p
+        LEFT JOIN product_overrides po ON po.product_id = p.stable_id
+        ${where.sql}
+        ORDER BY ${sortColumn} ${sortDirection}, p.stable_id ASC
+        LIMIT @limit OFFSET @offset
+      `,
+    )
+    .all({
+      ...where.parameters,
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    });
+
+  return {
+    products: rows.map(mapProductListRow),
+    page,
+    pageSize,
+    total: total ?? 0,
+    totalPages: Math.max(1, Math.ceil((total ?? 0) / pageSize)),
+  };
+}
+
+export function getDashboardProductDetail(
+  database: Database.Database,
+  stableId: string,
+): DashboardProductDetail | null {
+  const row = database
+    .prepare<{ stableId: string }, ProductDetailSqlRow>(
+      `
+        SELECT
+          p.stable_id AS stableId,
+          p.name,
+          p.url,
+          p.image_url AS imageUrl,
+          p.description,
+          p.collection,
+          p.price,
+          p.normalized_snapshot_json AS normalizedSnapshotJson,
+          p.raw_fingerprint AS rawFingerprint,
+          p.buyable_state AS availabilityState,
+          p.available_sizes_json AS availableSizesJson,
+          p.first_seen_at AS firstSeenAt,
+          p.last_seen_at AS lastSeenAt,
+          p.first_public_at AS firstPublicAt,
+          CASE WHEN p.retired_at IS NULL THEN 0 ELSE 1 END AS isRetired,
+          p.retired_at AS retiredAt,
+          p.retirement_reason AS retirementReason,
+          p.out_of_stock_confirmations AS outOfStockConfirmations,
+          po.denylisted,
+          po.force_retired AS forceRetired,
+          po.force_watched AS forceWatched,
+          po.known_employee_only AS knownEmployeeOnly,
+          po.annotation
+        FROM products p
+        LEFT JOIN product_overrides po ON po.product_id = p.stable_id
+        WHERE p.stable_id = @stableId
+      `,
+    )
+    .get({ stableId });
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    ...mapProductListRow(row),
+    sourceUrl: row.url,
+    description: row.description,
+    normalizedSnapshot: JSON.parse(row.normalizedSnapshotJson) as JsonObject,
+    rawFingerprint: row.rawFingerprint,
+    override: productOverrideFromDetailRow(row),
+    recentEvents: findRecentProductEvents(database, stableId),
+  };
+}
+
 function summarizeStaleRunningRun(
   run: DashboardRunSummary,
   now: Date,
@@ -97,6 +347,166 @@ function summarizeStaleRunningRun(
     startedAt: run.startedAt,
     minutesSinceStart,
   };
+}
+
+function buildProductWhereClause(options: DashboardProductListOptions): {
+  sql: string;
+  parameters: Record<string, unknown>;
+} {
+  const clauses: string[] = [];
+  const parameters: Record<string, unknown> = {};
+  const watchStatus = options.watchStatus ?? "active";
+
+  if (watchStatus === "active") {
+    clauses.push("p.retired_at IS NULL");
+  } else if (watchStatus === "retired") {
+    clauses.push("p.retired_at IS NOT NULL");
+  }
+
+  if (options.search?.trim()) {
+    clauses.push(
+      "(p.stable_id LIKE @search OR p.name LIKE @search OR p.collection LIKE @search)",
+    );
+    parameters.search = `%${escapeLike(options.search.trim())}%`;
+  }
+
+  if (options.availabilityStates?.length) {
+    const placeholders = options.availabilityStates.map((state, index) => {
+      const key = `availabilityState${index}`;
+      parameters[key] = state;
+      return `@${key}`;
+    });
+    clauses.push(`p.buyable_state IN (${placeholders.join(", ")})`);
+  }
+
+  if (options.collection?.trim()) {
+    clauses.push("p.collection = @collection");
+    parameters.collection = options.collection.trim();
+  }
+
+  if (options.notificationRelevant) {
+    clauses.push(`
+      (
+        p.buyable_state = 'publicly_buyable'
+        OR p.first_public_at IS NOT NULL
+        OR EXISTS (
+          SELECT 1
+          FROM events e
+          WHERE e.product_id = p.stable_id
+            AND e.notification_status IN ('pending', 'failed')
+        )
+      )
+    `);
+  }
+
+  return {
+    sql: clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "",
+    parameters,
+  };
+}
+
+function escapeLike(value: string): string {
+  return value.replaceAll("%", "\\%").replaceAll("_", "\\_");
+}
+
+function mapProductListRow(row: ProductListSqlRow): DashboardProductRow {
+  return {
+    stableId: row.stableId,
+    name: row.name,
+    url: row.url,
+    imageUrl: row.imageUrl,
+    collection: row.collection,
+    price: row.price,
+    availabilityState: row.availabilityState,
+    availableSizes: JSON.parse(row.availableSizesJson) as string[],
+    firstSeenAt: row.firstSeenAt,
+    lastSeenAt: row.lastSeenAt,
+    firstPublicAt: row.firstPublicAt,
+    isRetired: Boolean(row.isRetired),
+    retiredAt: row.retiredAt,
+    retirementReason: row.retirementReason,
+    outOfStockConfirmations: row.outOfStockConfirmations,
+    overrideBadges: overrideBadges(row),
+  };
+}
+
+function overrideBadges(row: ProductListSqlRow): string[] {
+  const badges: string[] = [];
+
+  if (row.denylisted) {
+    badges.push("denylisted");
+  }
+  if (row.forceRetired) {
+    badges.push("force retired");
+  }
+  if (row.forceWatched) {
+    badges.push("force watched");
+  }
+  if (row.knownEmployeeOnly) {
+    badges.push("known employee only");
+  }
+
+  return badges;
+}
+
+function productOverrideFromDetailRow(
+  row: ProductDetailSqlRow,
+): ProductOverride | null {
+  if (
+    row.denylisted === null &&
+    row.forceRetired === null &&
+    row.forceWatched === null &&
+    row.knownEmployeeOnly === null &&
+    row.annotation === null
+  ) {
+    return null;
+  }
+
+  return {
+    productId: row.stableId,
+    denylisted: Boolean(row.denylisted),
+    forceRetired: Boolean(row.forceRetired),
+    forceWatched: Boolean(row.forceWatched),
+    knownEmployeeOnly: Boolean(row.knownEmployeeOnly),
+    annotation: row.annotation,
+  };
+}
+
+function findRecentProductEvents(
+  database: Database.Database,
+  stableId: string,
+): DashboardProductEvent[] {
+  return database
+    .prepare<{ stableId: string }, ProductEventSqlRow>(
+      `
+        SELECT
+          id,
+          event_type AS eventType,
+          payload_json AS payloadJson,
+          notification_status AS notificationStatus,
+          attempt_count AS attemptCount,
+          last_attempt_at AS lastAttemptAt,
+          notification_error AS notificationError,
+          created_at AS createdAt,
+          notified_at AS notifiedAt
+        FROM events
+        WHERE product_id = @stableId
+        ORDER BY created_at DESC, id DESC
+        LIMIT 25
+      `,
+    )
+    .all({ stableId })
+    .map((row) => ({
+      id: row.id,
+      eventType: row.eventType,
+      payload: JSON.parse(row.payloadJson) as JsonObject,
+      notificationStatus: row.notificationStatus,
+      attemptCount: row.attemptCount,
+      lastAttemptAt: row.lastAttemptAt,
+      notificationError: row.notificationError,
+      createdAt: row.createdAt,
+      notifiedAt: row.notifiedAt,
+    }));
 }
 
 function findLatestRun(

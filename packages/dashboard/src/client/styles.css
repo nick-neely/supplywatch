@@ -32,10 +32,35 @@ button {
   padding: 8px 12px;
 }
 
+input,
+select {
+  background: oklch(99% 0.004 88);
+  border: 1px solid oklch(72% 0.012 95);
+  border-radius: 6px;
+  color: oklch(17% 0.006 95);
+  font: inherit;
+  min-height: 36px;
+  padding: 7px 10px;
+}
+
+input:focus-visible,
+select:focus-visible {
+  border-color: oklch(46% 0.085 158);
+  outline: 2px solid oklch(46% 0.085 158);
+  outline-offset: 2px;
+}
+
 button:hover,
 button:focus-visible {
   border-color: oklch(46% 0.085 158);
   background: oklch(46% 0.085 158);
+}
+
+button:disabled {
+  border-color: oklch(72% 0.012 95);
+  background: oklch(94% 0.008 88);
+  color: oklch(50% 0.012 95);
+  cursor: not-allowed;
 }
 
 button:focus-visible {
@@ -45,8 +70,43 @@ button:focus-visible {
 
 .dashboard-shell {
   margin: 0 auto;
-  max-width: 1120px;
+  max-width: 1280px;
   padding: 32px 20px;
+}
+
+.dashboard-nav {
+  align-items: center;
+  border-bottom: 1px solid oklch(72% 0.012 95);
+  display: flex;
+  gap: 6px;
+  margin-bottom: 24px;
+  padding-bottom: 10px;
+}
+
+.dashboard-nav a,
+.back-link,
+.source-link {
+  border-radius: 6px;
+  color: oklch(17% 0.006 95);
+  font:
+    700 0.75rem / 1.2 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  padding: 8px 10px;
+  text-decoration: none;
+}
+
+.dashboard-nav a:hover,
+.dashboard-nav a:focus-visible,
+.dashboard-nav a.active,
+.back-link:hover,
+.back-link:focus-visible,
+.source-link:hover,
+.source-link:focus-visible {
+  background: oklch(91% 0.035 154);
+  outline: none;
 }
 
 .dashboard-header {
@@ -56,6 +116,10 @@ button:focus-visible {
   gap: 16px;
   justify-content: space-between;
   padding-bottom: 18px;
+}
+
+.detail-header {
+  align-items: end;
 }
 
 .ledger-label {
@@ -96,6 +160,201 @@ h2 {
   padding: 20px 0;
 }
 
+.product-toolbar {
+  align-items: end;
+  border-bottom: 1px solid oklch(72% 0.012 95);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 0;
+}
+
+.product-toolbar label {
+  color: oklch(50% 0.012 95);
+  display: grid;
+  font:
+    700 0.75rem / 1.2 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  gap: 6px;
+}
+
+.product-toolbar input,
+.product-toolbar select {
+  min-width: 180px;
+}
+
+.checkbox-label {
+  align-items: center;
+  display: flex;
+  min-height: 36px;
+}
+
+.checkbox-label input {
+  min-height: auto;
+}
+
+.table-viewport {
+  border: 1px solid oklch(72% 0.012 95);
+  border-radius: 6px;
+  margin-top: 18px;
+  max-height: 620px;
+  overflow: auto;
+  position: relative;
+}
+
+.product-table {
+  background: oklch(99% 0.004 88);
+  border-collapse: collapse;
+  min-width: 1080px;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.product-table thead {
+  background: oklch(94% 0.008 88);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.product-table th,
+.product-table td {
+  border-bottom: 1px solid oklch(86% 0.009 95);
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.product-table th {
+  color: oklch(50% 0.012 95);
+  font:
+    700 0.75rem / 1.2 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.product-table tbody {
+  position: relative;
+}
+
+.product-table tbody tr {
+  display: table-row;
+  height: 72px;
+}
+
+.product-table tbody tr:hover {
+  background: oklch(94% 0.008 88);
+}
+
+.product-identity {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.product-identity a {
+  color: oklch(17% 0.006 95);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.product-thumb,
+.product-image {
+  background: oklch(94% 0.008 88);
+  border: 1px solid oklch(72% 0.012 95);
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.product-thumb {
+  flex: 0 0 48px;
+  height: 48px;
+  width: 48px;
+}
+
+.product-image {
+  aspect-ratio: 1;
+  width: min(100%, 260px);
+}
+
+.fallback {
+  align-items: center;
+  color: oklch(50% 0.012 95);
+  display: inline-flex;
+  font:
+    700 0.75rem / 1.2 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  justify-content: center;
+  padding: 8px;
+  text-align: center;
+}
+
+.detail-grid,
+.detail-columns {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  padding: 18px 0 0;
+}
+
+.detail-columns {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.detail-panel {
+  background: oklch(99% 0.004 88);
+  border: 1px solid oklch(72% 0.012 95);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.evidence-panel {
+  margin-top: 16px;
+}
+
+.evidence-panel pre {
+  background: oklch(94% 0.008 88);
+  border: 1px solid oklch(72% 0.012 95);
+  border-radius: 6px;
+  margin: 14px 0 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.ghost-button {
+  background: transparent;
+  color: oklch(17% 0.006 95);
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.table-footer {
+  align-items: center;
+  border-top: 0;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.pagination-controls {
+  display: flex;
+  gap: 8px;
+}
+
 .summary-panel,
 .skeleton-panel {
   background: oklch(99% 0.004 88);
@@ -112,6 +371,14 @@ h2 {
     oklch(99% 0.004 88),
     oklch(94% 0.008 88)
   );
+}
+
+.skeleton-table {
+  background: oklch(99% 0.004 88);
+  border: 1px solid oklch(72% 0.012 95);
+  border-radius: 6px;
+  height: 360px;
+  margin-top: 18px;
 }
 
 dl {
@@ -212,5 +479,16 @@ footer {
   .dashboard-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .product-toolbar,
+  .product-toolbar label,
+  .product-toolbar input,
+  .product-toolbar select {
+    width: 100%;
   }
 }
