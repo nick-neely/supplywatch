@@ -277,23 +277,51 @@ function navigateTo(url: string): void {
   window.dispatchEvent(new Event("supplywatch:navigate"));
 }
 
+type MountedCheck = () => boolean;
+type DashboardRefresh = (isMounted: MountedCheck) => Promise<void>;
+
 function useDashboardRefresh(
-  refresh: () => Promise<void>,
+  refresh: DashboardRefresh,
   refreshIntervalMs: number,
-): void {
+): { isRefreshing: boolean; refreshNow: () => void } {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const isMountedRef = useRef(false);
+
   useEffect(() => {
-    void refresh();
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const refreshNow = useCallback(() => {
+    setIsRefreshing(true);
+
+    void refresh(() => isMountedRef.current).finally(() => {
+      if (isMountedRef.current) {
+        setIsRefreshing(false);
+      }
+    });
+  }, [refresh]);
+
+  useEffect(() => {
+    refreshNow();
 
     if (refreshIntervalMs <= 0) {
       return;
     }
 
-    const interval = window.setInterval(() => {
-      void refresh();
-    }, refreshIntervalMs);
+    const interval = window.setInterval(refreshNow, refreshIntervalMs);
 
     return () => window.clearInterval(interval);
-  }, [refresh, refreshIntervalMs]);
+  }, [refreshIntervalMs, refreshNow]);
+
+  return { isRefreshing, refreshNow };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 const PRODUCT_TABLE_COLUMNS: ColumnDef<DashboardProductRow>[] = [
@@ -364,22 +392,27 @@ function ProductsPage({
   const [options, setOptions] = useState(parseProductListOptions);
   const [page, setPage] = useState<DashboardProductPage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setIsRefreshing(true);
-    setError(null);
+  const { isRefreshing, refreshNow } = useDashboardRefresh(
+    useCallback(
+      async (isMounted) => {
+        setError(null);
 
-    try {
-      setPage(await fetchProducts(options));
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [fetchProducts, options]);
-
-  useDashboardRefresh(refresh, refreshIntervalMs);
+        try {
+          const page = await fetchProducts(options);
+          if (isMounted()) {
+            setPage(page);
+          }
+        } catch (error) {
+          if (isMounted()) {
+            setError(errorMessage(error));
+          }
+        }
+      },
+      [fetchProducts, options],
+    ),
+    refreshIntervalMs,
+  );
 
   const updateOptions = (next: DashboardProductListOptions) => {
     setOptions(next);
@@ -401,7 +434,7 @@ function ProductsPage({
           <p className="ledger-label">Watcher dashboard</p>
           <h1>Products</h1>
         </div>
-        <button type="button" onClick={() => void refresh()}>
+        <button type="button" onClick={refreshNow}>
           {isRefreshing ? "Refreshing..." : "Refresh Products"}
         </button>
       </header>
@@ -635,24 +668,27 @@ function ProductDetailPage({
 }) {
   const [product, setProduct] = useState<DashboardProductDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setIsRefreshing(true);
-
-    try {
-      const product = await fetchProductDetail(stableId);
-      setProduct(product);
-      setError(product ? null : "Product not found");
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [fetchProductDetail, stableId]);
-
-  useDashboardRefresh(refresh, refreshIntervalMs);
+  const { isRefreshing, refreshNow } = useDashboardRefresh(
+    useCallback(
+      async (isMounted) => {
+        try {
+          const product = await fetchProductDetail(stableId);
+          if (isMounted()) {
+            setProduct(product);
+            setError(product ? null : "Product not found");
+          }
+        } catch (error) {
+          if (isMounted()) {
+            setError(errorMessage(error));
+          }
+        }
+      },
+      [fetchProductDetail, stableId],
+    ),
+    refreshIntervalMs,
+  );
 
   if (error) {
     return <p className="error-panel">{error}</p>;
@@ -682,7 +718,7 @@ function ProductDetailPage({
             Open source
           </a>
         ) : null}
-        <button type="button" onClick={() => void refresh()}>
+        <button type="button" onClick={refreshNow}>
           {isRefreshing ? "Refreshing..." : "Refresh Product"}
         </button>
       </header>
@@ -794,22 +830,27 @@ function EventsPage({
   );
   const [events, setEvents] = useState<DashboardEventList | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setIsRefreshing(true);
-    setError(null);
+  const { isRefreshing, refreshNow } = useDashboardRefresh(
+    useCallback(
+      async (isMounted) => {
+        setError(null);
 
-    try {
-      setEvents(await fetchEvents(tableState));
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [fetchEvents, tableState]);
-
-  useDashboardRefresh(refresh, refreshIntervalMs);
+        try {
+          const events = await fetchEvents(tableState);
+          if (isMounted()) {
+            setEvents(events);
+          }
+        } catch (error) {
+          if (isMounted()) {
+            setError(errorMessage(error));
+          }
+        }
+      },
+      [fetchEvents, tableState],
+    ),
+    refreshIntervalMs,
+  );
 
   const updateTableState = (next: Partial<EventsTableState>) => {
     const updated = { ...tableState, ...next };
@@ -824,7 +865,7 @@ function EventsPage({
           <p className="ledger-label">Watcher dashboard</p>
           <h1>Events</h1>
         </div>
-        <button type="button" onClick={() => void refresh()}>
+        <button type="button" onClick={refreshNow}>
           {isRefreshing ? "Refreshing..." : "Refresh Events"}
         </button>
       </header>
@@ -1040,23 +1081,26 @@ function EventDetailPage({
 }) {
   const [event, setEvent] = useState<DashboardEventDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setIsRefreshing(true);
-
-    try {
-      const event = await fetchEventDetail(eventId);
-      setEvent(event);
-      setError(event ? null : "Event not found");
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [eventId, fetchEventDetail]);
-
-  useDashboardRefresh(refresh, refreshIntervalMs);
+  const { isRefreshing, refreshNow } = useDashboardRefresh(
+    useCallback(
+      async (isMounted) => {
+        try {
+          const event = await fetchEventDetail(eventId);
+          if (isMounted()) {
+            setEvent(event);
+            setError(event ? null : "Event not found");
+          }
+        } catch (error) {
+          if (isMounted()) {
+            setError(errorMessage(error));
+          }
+        }
+      },
+      [eventId, fetchEventDetail],
+    ),
+    refreshIntervalMs,
+  );
 
   if (error) {
     return <p className="error-panel">{error}</p>;
@@ -1072,7 +1116,7 @@ function EventDetailPage({
         <a className="back-link" href="/events">
           Back to Events
         </a>
-        <button type="button" onClick={() => void refresh()}>
+        <button type="button" onClick={refreshNow}>
           {isRefreshing ? "Refreshing..." : "Refresh Event"}
         </button>
       </div>
@@ -1133,22 +1177,27 @@ function RunsPage({
   );
   const [runs, setRuns] = useState<DashboardRunList | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setIsRefreshing(true);
-    setError(null);
+  const { isRefreshing, refreshNow } = useDashboardRefresh(
+    useCallback(
+      async (isMounted) => {
+        setError(null);
 
-    try {
-      setRuns(await fetchRuns(tableState));
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [fetchRuns, tableState]);
-
-  useDashboardRefresh(refresh, refreshIntervalMs);
+        try {
+          const runs = await fetchRuns(tableState);
+          if (isMounted()) {
+            setRuns(runs);
+          }
+        } catch (error) {
+          if (isMounted()) {
+            setError(errorMessage(error));
+          }
+        }
+      },
+      [fetchRuns, tableState],
+    ),
+    refreshIntervalMs,
+  );
 
   const updateTableState = (next: Partial<RunsTableState>) => {
     const updated = { ...tableState, ...next };
@@ -1163,7 +1212,7 @@ function RunsPage({
           <p className="ledger-label">Watcher dashboard</p>
           <h1>Runs</h1>
         </div>
-        <button type="button" onClick={() => void refresh()}>
+        <button type="button" onClick={refreshNow}>
           {isRefreshing ? "Refreshing..." : "Refresh Runs"}
         </button>
       </header>
@@ -1346,23 +1395,26 @@ function RunDetailPage({
 }) {
   const [run, setRun] = useState<DashboardRunRow | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setIsRefreshing(true);
-
-    try {
-      const run = await fetchRunDetail(runId);
-      setRun(run);
-      setError(run ? null : "Run not found");
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [fetchRunDetail, runId]);
-
-  useDashboardRefresh(refresh, refreshIntervalMs);
+  const { isRefreshing, refreshNow } = useDashboardRefresh(
+    useCallback(
+      async (isMounted) => {
+        try {
+          const run = await fetchRunDetail(runId);
+          if (isMounted()) {
+            setRun(run);
+            setError(run ? null : "Run not found");
+          }
+        } catch (error) {
+          if (isMounted()) {
+            setError(errorMessage(error));
+          }
+        }
+      },
+      [fetchRunDetail, runId],
+    ),
+    refreshIntervalMs,
+  );
 
   if (error) {
     return <p className="error-panel">{error}</p>;
@@ -1378,7 +1430,7 @@ function RunDetailPage({
         <a className="back-link" href="/runs">
           Back to Runs
         </a>
-        <button type="button" onClick={() => void refresh()}>
+        <button type="button" onClick={refreshNow}>
           {isRefreshing ? "Refreshing..." : "Refresh Run"}
         </button>
       </div>
@@ -1427,22 +1479,27 @@ function SummaryPage({
 }) {
   const [summary, setSummary] = useState<WatcherDashboardSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setIsRefreshing(true);
-    setError(null);
+  const { isRefreshing, refreshNow } = useDashboardRefresh(
+    useCallback(
+      async (isMounted) => {
+        setError(null);
 
-    try {
-      setSummary(await fetchSummary());
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [fetchSummary]);
-
-  useDashboardRefresh(refresh, refreshIntervalMs);
+        try {
+          const summary = await fetchSummary();
+          if (isMounted()) {
+            setSummary(summary);
+          }
+        } catch (error) {
+          if (isMounted()) {
+            setError(errorMessage(error));
+          }
+        }
+      },
+      [fetchSummary],
+    ),
+    refreshIntervalMs,
+  );
 
   return (
     <>
@@ -1451,7 +1508,7 @@ function SummaryPage({
           <p className="ledger-label">Watcher dashboard</p>
           <h1>Supplywatch summary</h1>
         </div>
-        <button type="button" onClick={() => void refresh()}>
+        <button type="button" onClick={refreshNow}>
           {isRefreshing ? "Refreshing..." : "Refresh summary"}
         </button>
       </header>
