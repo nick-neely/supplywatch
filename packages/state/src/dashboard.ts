@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { RunStatus } from "./types.js";
+import type { NotificationStatus, RunStatus } from "./types.js";
 
 const DEFAULT_STALE_RUNNING_RUN_MINUTES = 30;
 
@@ -42,22 +42,8 @@ export type WatcherDashboardSummaryOptions = {
   staleRunningRunMinutes?: number;
 };
 
-type RunRow = {
-  id: number;
-  startedAt: string;
-  finishedAt: string | null;
-  status: RunStatus;
-  productCount: number;
-  errorMessage: string | null;
-};
-
 type NotificationCountRow = {
-  notificationStatus: string;
-  count: number;
-};
-
-type HealthEventCountRow = {
-  eventType: string;
+  notificationStatus: NotificationStatus;
   count: number;
 };
 
@@ -68,44 +54,9 @@ export function getWatcherDashboardSummary(
   const now = options.now ?? new Date();
   const staleRunningRunMinutes =
     options.staleRunningRunMinutes ?? DEFAULT_STALE_RUNNING_RUN_MINUTES;
-  const latestRun = database
-    .prepare<[], RunRow>(
-      `
-        SELECT
-          id,
-          started_at AS startedAt,
-          finished_at AS finishedAt,
-          status,
-          product_count AS productCount,
-          error_message AS errorMessage
-        FROM runs
-        ORDER BY started_at DESC, id DESC
-        LIMIT 1
-      `,
-    )
-    .get();
-
-  const notificationCounts = database
-    .prepare<[], NotificationCountRow>(
-      `
-        SELECT notification_status AS notificationStatus, COUNT(*) AS count
-        FROM events
-        WHERE notification_status IN ('pending', 'failed')
-        GROUP BY notification_status
-      `,
-    )
-    .all();
-  const healthEventCounts = database
-    .prepare<[], HealthEventCountRow>(
-      `
-        SELECT event_type AS eventType, COUNT(*) AS count
-        FROM events
-        WHERE json_extract(payload_json, '$.alertKind') = 'health'
-        GROUP BY event_type
-        ORDER BY event_type ASC
-      `,
-    )
-    .all();
+  const latestRun = findLatestRun(database);
+  const notificationCounts = countNotificationsByStatus(database);
+  const healthEventCounts = countHealthEventsByType(database);
 
   return {
     generatedAt: now.toISOString(),
@@ -125,7 +76,7 @@ export function getWatcherDashboardSummary(
 }
 
 function summarizeStaleRunningRun(
-  run: RunRow,
+  run: DashboardRunSummary,
   now: Date,
   thresholdMinutes: number,
 ): DashboardStaleRunningRun | null {
@@ -146,6 +97,58 @@ function summarizeStaleRunningRun(
     startedAt: run.startedAt,
     minutesSinceStart,
   };
+}
+
+function findLatestRun(
+  database: Database.Database,
+): DashboardRunSummary | undefined {
+  return database
+    .prepare<[], DashboardRunSummary>(
+      `
+        SELECT
+          id,
+          started_at AS startedAt,
+          finished_at AS finishedAt,
+          status,
+          product_count AS productCount,
+          error_message AS errorMessage
+        FROM runs
+        ORDER BY started_at DESC, id DESC
+        LIMIT 1
+      `,
+    )
+    .get();
+}
+
+function countNotificationsByStatus(
+  database: Database.Database,
+): NotificationCountRow[] {
+  return database
+    .prepare<[], NotificationCountRow>(
+      `
+        SELECT notification_status AS notificationStatus, COUNT(*) AS count
+        FROM events
+        WHERE notification_status IN ('pending', 'failed')
+        GROUP BY notification_status
+      `,
+    )
+    .all();
+}
+
+function countHealthEventsByType(
+  database: Database.Database,
+): DashboardHealthEventCount[] {
+  return database
+    .prepare<[], DashboardHealthEventCount>(
+      `
+        SELECT event_type AS eventType, COUNT(*) AS count
+        FROM events
+        WHERE json_extract(payload_json, '$.alertKind') = 'health'
+        GROUP BY event_type
+        ORDER BY event_type ASC
+      `,
+    )
+    .all();
 }
 
 function countNotifications(
