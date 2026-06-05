@@ -9,6 +9,11 @@ export type OpenStateRepository = {
   close: () => void;
 };
 
+export type OpenReadOnlyStateDatabase = {
+  database: Database.Database;
+  close: () => void;
+};
+
 export function openStateRepository(databasePath: string): OpenStateRepository {
   if (databasePath !== ":memory:") {
     mkdirSync(dirname(databasePath), { recursive: true });
@@ -20,6 +25,20 @@ export function openStateRepository(databasePath: string): OpenStateRepository {
   return {
     database,
     repository,
+    close: () => database.close(),
+  };
+}
+
+export function openReadOnlyStateDatabase(
+  databasePath: string,
+): OpenReadOnlyStateDatabase {
+  const database = new Database(databasePath, {
+    fileMustExist: true,
+    readonly: true,
+  });
+
+  return {
+    database,
     close: () => database.close(),
   };
 }

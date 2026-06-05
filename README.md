@@ -81,6 +81,21 @@ DATABASE_PATH=./data/review.sqlite pnpm db:studio
 Use a different `DATABASE_PATH` only when you intentionally want a separate
 local database for review or experiments.
 
+## Watcher Dashboard
+
+The local Watcher dashboard is read-only and runs separately from the watcher.
+It binds to `127.0.0.1` by default and reads the configured SQLite database
+without applying migrations or writing state.
+
+```bash
+pnpm dashboard:build
+DASHBOARD_DATABASE_PATH=./data/supplywatch.sqlite pnpm dashboard:start
+```
+
+`DASHBOARD_DATABASE_PATH` is preferred for the dashboard. `DATABASE_PATH` is
+accepted as a local fallback. The summary API is served at `/api/summary`, and
+the UI refreshes automatically with a manual refresh action.
+
 ## Docker
 
 ```bash

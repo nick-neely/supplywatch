@@ -12,6 +12,10 @@
       "types": "./dist/database.d.ts",
       "default": "./dist/database.js"
     },
+    "./dashboard": {
+      "types": "./dist/dashboard.d.ts",
+      "default": "./dist/dashboard.js"
+    },
     "./repository": {
       "types": "./dist/repository.d.ts",
       "default": "./dist/repository.js"

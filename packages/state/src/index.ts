@@ -1,5 +1,13 @@
-export type { OpenStateRepository } from "./database.js";
-export { openStateRepository } from "./database.js";
+export {
+  getWatcherDashboardSummary,
+  type WatcherDashboardSummary,
+  type WatcherDashboardSummaryOptions,
+} from "./dashboard.js";
+export type {
+  OpenReadOnlyStateDatabase,
+  OpenStateRepository,
+} from "./database.js";
+export { openReadOnlyStateDatabase, openStateRepository } from "./database.js";
 export {
   type EventRecord,
   type JsonObject,
