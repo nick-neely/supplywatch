@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-05T00:06:35.000Z",
+  "title": "Design System: Supplywatch",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "oklch(97% 0.006 88)",
+        "tonalRamp": [
+          "oklch(18% 0.006 88)",
+          "oklch(30% 0.006 88)",
+          "oklch(42% 0.006 88)",
+          "oklch(56% 0.006 88)",
+          "oklch(70% 0.006 88)",
+          "oklch(82% 0.006 88)",
+          "oklch(91% 0.006 88)",
+          "oklch(97% 0.006 88)"
+        ]
+      },
+      "paper-ink": {
+        "role": "neutral",
+        "displayName": "Paper Ink",
+        "canonical": "oklch(17% 0.006 95)",
+        "tonalRamp": [
+          "oklch(15% 0.006 95)",
+          "oklch(24% 0.006 95)",
+          "oklch(35% 0.006 95)",
+          "oklch(48% 0.006 95)",
+          "oklch(62% 0.006 95)",
+          "oklch(76% 0.006 95)",
+          "oklch(88% 0.006 95)",
+          "oklch(96% 0.006 95)"
+        ]
+      },
+      "annotation-green": {
+        "role": "primary",
+        "displayName": "Annotation Green",
+        "canonical": "oklch(46% 0.085 158)",
+        "tonalRamp": [
+          "oklch(18% 0.045 158)",
+          "oklch(28% 0.065 158)",
+          "oklch(38% 0.08 158)",
+          "oklch(46% 0.085 158)",
+          "oklch(58% 0.075 158)",
+          "oklch(70% 0.055 158)",
+          "oklch(83% 0.04 158)",
+          "oklch(94% 0.025 158)"
+        ]
+      },
+      "warning-amber": {
+        "role": "warning",
+        "displayName": "Warning Amber",
+        "canonical": "oklch(70% 0.13 80)",
+        "tonalRamp": [
+          "oklch(18% 0.05 80)",
+          "oklch(30% 0.075 80)",
+          "oklch(42% 0.1 80)",
+          "oklch(56% 0.12 80)",
+          "oklch(70% 0.13 80)",
+          "oklch(80% 0.095 80)",
+          "oklch(89% 0.055 80)",
+          "oklch(96% 0.025 80)"
+        ]
+      },
+      "danger-red": {
+        "role": "danger",
+        "displayName": "Danger Red",
+        "canonical": "oklch(58% 0.13 28)",
+        "tonalRamp": [
+          "oklch(18% 0.05 28)",
+          "oklch(30% 0.075 28)",
+          "oklch(42% 0.105 28)",
+          "oklch(58% 0.13 28)",
+          "oklch(68% 0.105 28)",
+          "oklch(78% 0.075 28)",
+          "oklch(88% 0.045 28)",
+          "oklch(96% 0.02 28)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Application title and major section headings."
+      },
+      "headline": {
+        "displayName": "Editorial Headline",
+        "purpose": "Sparse editorial framing for detail pages and empty states."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Primary product UI text and prose."
+      },
+      "label": {
+        "displayName": "Ledger Label",
+        "purpose": "Chips, column labels, compact tags, and metadata."
+      }
+    },
+    "shadows": [
+      {
+        "name": "popover-lift",
+        "value": "0 14px 32px color-mix(in oklch, oklch(17% 0.006 95) 16%, transparent)",
+        "purpose": "Floating filters, menus, and tooltips."
+      },
+      {
+        "name": "image-rest",
+        "value": "0 1px 2px color-mix(in oklch, oklch(17% 0.006 95) 12%, transparent)",
+        "purpose": "Subtle edge for product images on paper surfaces."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-quart",
+        "value": "cubic-bezier(0.25, 1, 0.5, 1)",
+        "purpose": "Default easing for hover, focus, collapse, and refresh state transitions."
+      },
+      {
+        "name": "fast-state",
+        "value": "160ms",
+        "purpose": "Default state transition duration for product controls."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Compact high-confidence action for refresh or apply.",
+      "html": "<button class=\"ds-btn-primary\">Refresh</button>",
+      "css": ".ds-btn-primary { background: oklch(17% 0.006 95); color: oklch(97% 0.006 88); border: 1px solid oklch(17% 0.006 95); border-radius: 6px; padding: 8px 12px; font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0; transition: background 160ms cubic-bezier(0.25, 1, 0.5, 1), border-color 160ms cubic-bezier(0.25, 1, 0.5, 1); } .ds-btn-primary:hover { background: oklch(46% 0.085 158); border-color: oklch(46% 0.085 158); } .ds-btn-primary:focus-visible { outline: 2px solid oklch(46% 0.085 158); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Low-emphasis toolbar action.",
+      "html": "<button class=\"ds-btn-ghost\">Include retired</button>",
+      "css": ".ds-btn-ghost { background: transparent; color: oklch(17% 0.006 95); border: 1px solid oklch(72% 0.012 95); border-radius: 6px; padding: 8px 10px; font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0; transition: background 160ms cubic-bezier(0.25, 1, 0.5, 1), border-color 160ms cubic-bezier(0.25, 1, 0.5, 1); } .ds-btn-ghost:hover { background: oklch(94% 0.008 88); } .ds-btn-ghost:focus-visible { outline: 2px solid oklch(46% 0.085 158); outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "Availability, override, notification, or Run status label.",
+      "html": "<span class=\"ds-chip ds-chip-available\">Publicly available</span>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; border-radius: 3px; padding: 3px 6px; font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0; border: 1px solid currentColor; } .ds-chip-available { background: oklch(91% 0.035 154); color: oklch(46% 0.085 158); }"
+    },
+    {
+      "name": "Dashboard Table Row",
+      "kind": "custom",
+      "refersTo": "table-row",
+      "description": "Dense row treatment for Products, Events, and Runs.",
+      "html": "<div class=\"ds-row\"><div class=\"ds-row-title\">OpenAI Essentials Hoodie</div><span class=\"ds-row-meta\">Last seen 2m ago</span><span class=\"ds-chip ds-chip-available\">Publicly available</span></div>",
+      "css": ".ds-row { display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; gap: 12px; align-items: center; background: oklch(99% 0.004 88); color: oklch(17% 0.006 95); border-bottom: 1px solid oklch(72% 0.012 95); padding: 10px 12px; font: 400 15px/1.5 system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; } .ds-row:hover { background: oklch(94% 0.008 88); } .ds-row-title { font-weight: 700; } .ds-row-meta { color: oklch(50% 0.012 95); } .ds-chip { border-radius: 3px; padding: 3px 6px; font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; border: 1px solid currentColor; } .ds-chip-available { background: oklch(91% 0.035 154); color: oklch(46% 0.085 158); }"
+    },
+    {
+      "name": "Evidence Panel",
+      "kind": "card",
+      "refersTo": "detail-evidence",
+      "description": "Flat bordered panel for curated fields or collapsible raw evidence.",
+      "html": "<section class=\"ds-evidence\"><div class=\"ds-evidence-label\">Snapshot evidence</div><pre>{ \"availabilityState\": \"publicly_available\" }</pre></section>",
+      "css": ".ds-evidence { background: oklch(99% 0.004 88); color: oklch(17% 0.006 95); border: 1px solid oklch(72% 0.012 95); border-radius: 6px; padding: 16px; } .ds-evidence-label { margin-bottom: 8px; font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: oklch(50% 0.012 95); } .ds-evidence pre { margin: 0; overflow: auto; font: 400 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Annotated Operations Ledger",
+    "overview": "Supplywatch's dashboard translates the README image into a working product surface: warm paper, firm black type, thin rules, green annotations, and product evidence, tightened into a local read-only dashboard.",
+    "keyCharacteristics": [
+      "Warm paper surfaces with tinted black text and thin ledger-like rules.",
+      "Restrained green accent for monitoring, confirmation, focus, and annotation.",
+      "Dense Product, Event, and Run views with stable labels and URLs.",
+      "Raw JSON and fingerprints treated as auditable evidence, not visual noise.",
+      "Familiar product controls: tables, filters, tabs, breadcrumbs, buttons, links."
+    ],
+    "rules": [
+      {
+        "name": "The Evidence Color Rule",
+        "body": "Green means monitored or confirmed, amber means uncertain or waiting, red means operational failure. Candidate evidence must not use the same treatment as confirmed public availability.",
+        "section": "colors"
+      },
+      {
+        "name": "The Serif Rationing Rule",
+        "body": "Serif is an accent for editorial framing. Tables, controls, badges, and data stay in the sans or mono stacks.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Ledger Rule",
+        "body": "Do not wrap every page section in a card. Use full-width bands, rules, table structure, and panels only where grouping helps the workflow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do lead with Products and make Events and Runs support the audit trail.",
+      "Do use Availability state in UI copy instead of buyable state.",
+      "Do distinguish candidate evidence from confirmed public availability with label, tone, and placement.",
+      "Do keep tables dense, stable, and URL-addressable.",
+      "Do use warm paper neutrals, thin rules, and sparse green annotations to echo the README image."
+    ],
+    "donts": [
+      "Don't use admin panel, buyer UI, checkout UI, cart patterns, or language implying Supplywatch buys products.",
+      "Don't use dark blue observability defaults, purple gradients, neon accents, or decorative glassmorphism.",
+      "Don't treat animate-wiggle or candidate-signal Events as confirmed availability.",
+      "Don't hide raw evidence when a classification may need auditing.",
+      "Don't use thick colored side stripes on cards, callouts, alerts, or table rows."
+    ]
+  }
+}
