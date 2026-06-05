@@ -7,6 +7,7 @@ import {
   WatcherStateRepository,
 } from "@supplywatch/state";
 import { describe, expect, it } from "vitest";
+import { resolveDatabasePath } from "../packages/state/src/migrate.js";
 
 const PRODUCT: ProductRecord = {
   stableId: "product-openai-tee",
@@ -46,6 +47,33 @@ describe("shared state package", () => {
     } finally {
       state.close();
       rmSync(directory, { force: true, recursive: true });
+    }
+  });
+});
+
+describe("state migration script paths", () => {
+  it("resolves relative database paths from the pnpm invocation directory", () => {
+    const originalInitCwd = process.env.INIT_CWD;
+
+    try {
+      process.env.INIT_CWD = "/workspace/supplywatch";
+
+      expect(resolveDatabasePath(undefined)).toBe(
+        "/workspace/supplywatch/data/supplywatch.sqlite",
+      );
+      expect(resolveDatabasePath("./data/review.sqlite")).toBe(
+        "/workspace/supplywatch/data/review.sqlite",
+      );
+      expect(resolveDatabasePath("/var/lib/supplywatch.sqlite")).toBe(
+        "/var/lib/supplywatch.sqlite",
+      );
+      expect(resolveDatabasePath(":memory:")).toBe(":memory:");
+    } finally {
+      if (originalInitCwd === undefined) {
+        delete process.env.INIT_CWD;
+      } else {
+        process.env.INIT_CWD = originalInitCwd;
+      }
     }
   });
 });
