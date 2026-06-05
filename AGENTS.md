@@ -27,7 +27,9 @@ Single-context layout: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/
 
 ## Learned Workspace Facts
 
-- Biome handles formatting and linting; use `pnpm lint`, `pnpm lint:fix`, and `pnpm format`.
+- Biome handles formatting and linting; `pnpm lint` runs `biome check` (includes format); also `pnpm lint:fix` and `pnpm format`.
 - Biome formatter uses 2-space indentation.
+- Enable `css.parser.tailwindDirectives` in `biome.json` for Tailwind v4 CSS (`@theme`, `@apply`, etc.).
+- `pnpm verify` runs typecheck, lint, format:check, build, and test in parallel via concurrently.
 - README and repo images belong in `assets/`.
 - `.cursor/hooks/state/` is gitignored for local Cursor hook and continual-learning state.
