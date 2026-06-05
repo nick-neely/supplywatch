@@ -317,6 +317,26 @@ h2 {
   padding: 16px;
 }
 
+.detail-layout {
+  display: grid;
+  gap: 16px;
+  padding: 18px 0 0;
+}
+
+.detail-title {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.stale-note {
+  color: oklch(45% 0.09 65);
+  display: block;
+  font-size: 0.75rem;
+  margin-top: 6px;
+}
+
 .evidence-panel {
   margin-top: 16px;
 }

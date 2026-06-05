@@ -14,12 +14,25 @@ import {
   type DashboardProductSort,
   type DashboardProductSortField,
   type DashboardProductWatchStatus,
+  type DashboardRunSortBy,
+  type DashboardSortDirection,
   getDashboardProductDetail,
   getDashboardProducts,
+  getDashboardRunDetail,
   getWatcherDashboardSummary,
+  listDashboardRuns,
   type OpenReadOnlyStateDatabase,
   openReadOnlyStateDatabase,
+  RUN_STATUSES,
+  type RunStatus,
 } from "@supplywatch/state";
+
+const RUN_SORT_COLUMNS = [
+  "startedAt",
+  "finishedAt",
+  "status",
+  "productCount",
+] as const satisfies readonly DashboardRunSortBy[];
 
 export type DashboardServerOptions = {
   databasePath: string;
@@ -127,6 +140,41 @@ function handleRequest(
     return;
   }
 
+  if (url.pathname === "/api/runs") {
+    const runs = listDashboardRuns(state.database, {
+      status: parseRunStatus(url.searchParams.get("status")),
+      sortBy: parseRunSortBy(url.searchParams.get("sort")),
+      sortDirection: parseSortDirection(url.searchParams.get("direction")),
+      page: positiveInteger(url.searchParams.get("page")),
+      pageSize: positiveInteger(url.searchParams.get("pageSize")),
+      now: options.now?.(),
+    });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify(runs));
+    return;
+  }
+
+  const runDetailMatch = /^\/api\/runs\/(\d+)$/.exec(url.pathname);
+  if (runDetailMatch) {
+    const run = getDashboardRunDetail(
+      state.database,
+      Number(runDetailMatch[1]),
+      {
+        now: options.now?.(),
+      },
+    );
+
+    if (!run) {
+      response.writeHead(404, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: "Run not found" }));
+      return;
+    }
+
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify(run));
+    return;
+  }
+
   if (options.staticDir) {
     serveStaticFile(options.staticDir, url.pathname, response);
     return;
@@ -205,6 +253,36 @@ function isProductSortField(
   value: string | undefined,
 ): value is DashboardProductSortField {
   return DASHBOARD_PRODUCT_SORT_FIELDS.some((field) => field === value);
+}
+
+function parseRunStatus(value: string | null): RunStatus | undefined {
+  if (isRunStatus(value)) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function parseRunSortBy(value: string | null): DashboardRunSortBy | undefined {
+  if (isRunSortColumn(value)) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function parseSortDirection(
+  value: string | null,
+): DashboardSortDirection | undefined {
+  return value === "asc" || value === "desc" ? value : undefined;
+}
+
+function isRunStatus(value: string | null): value is RunStatus {
+  return RUN_STATUSES.some((status) => status === value);
+}
+
+function isRunSortColumn(value: string | null): value is DashboardRunSortBy {
+  return RUN_SORT_COLUMNS.some((column) => column === value);
 }
 
 function positiveInteger(value: string | null): number | undefined {

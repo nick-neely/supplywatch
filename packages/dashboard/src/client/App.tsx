@@ -7,6 +7,11 @@ import type {
   DashboardProductSort,
   DashboardProductSortField,
   DashboardProductWatchStatus,
+  DashboardRunList,
+  DashboardRunRow,
+  DashboardRunSortBy,
+  DashboardSortDirection,
+  RunStatus,
   WatcherDashboardSummary,
 } from "@supplywatch/state";
 import {
@@ -22,7 +27,7 @@ import {
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { CSSProperties, ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./styles.css";
 
 export type SummaryFetcher = () => Promise<WatcherDashboardSummary>;
@@ -32,12 +37,26 @@ export type ProductListFetcher = (
 export type ProductDetailFetcher = (
   stableId: string,
 ) => Promise<DashboardProductDetail | null>;
+export type RunsFetcher = (state: RunsTableState) => Promise<DashboardRunList>;
+export type RunDetailFetcher = (
+  runId: number,
+) => Promise<DashboardRunRow | null>;
 
 export type AppProps = {
   fetchSummary?: SummaryFetcher;
   fetchProducts?: ProductListFetcher;
   fetchProductDetail?: ProductDetailFetcher;
+  fetchRuns?: RunsFetcher;
+  fetchRunDetail?: RunDetailFetcher;
   refreshIntervalMs?: number;
+};
+
+export type RunsTableState = {
+  status?: RunStatus;
+  sortBy: DashboardRunSortBy;
+  sortDirection: DashboardSortDirection;
+  page: number;
+  pageSize: number;
 };
 
 const DEFAULT_REFRESH_INTERVAL_MS = 15_000;
@@ -46,11 +65,31 @@ const DEFAULT_PRODUCT_SORT: DashboardProductSort = {
   field: "lastSeenAt",
   direction: "desc",
 };
+const RUN_STATUSES = [
+  "running",
+  "completed",
+  "failed",
+] as const satisfies readonly RunStatus[];
+const RUN_SORT_COLUMNS = [
+  "status",
+  "startedAt",
+  "finishedAt",
+  "productCount",
+] as const satisfies readonly DashboardRunSortBy[];
+const RUN_PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
+const DEFAULT_RUNS_TABLE_STATE: RunsTableState = {
+  sortBy: "startedAt",
+  sortDirection: "desc",
+  page: 1,
+  pageSize: 25,
+};
 
 export function App({
   fetchSummary = fetchSummaryFromApi,
   fetchProducts = fetchProductsFromApi,
   fetchProductDetail = fetchProductDetailFromApi,
+  fetchRuns = fetchRunsFromApi,
+  fetchRunDetail = fetchRunDetailFromApi,
   refreshIntervalMs = DEFAULT_REFRESH_INTERVAL_MS,
 }: AppProps) {
   const route = useRoute();
@@ -65,6 +104,12 @@ export function App({
           Products
         </a>
         <a
+          href="/runs"
+          className={route.pathname.startsWith("/runs") ? "active" : ""}
+        >
+          Runs
+        </a>
+        <a
           href="/summary"
           className={route.pathname === "/summary" ? "active" : ""}
         >
@@ -76,6 +121,8 @@ export function App({
         fetchSummary,
         fetchProducts,
         fetchProductDetail,
+        fetchRuns,
+        fetchRunDetail,
         refreshIntervalMs,
       })}
     </main>
@@ -97,6 +144,19 @@ function renderRoute(pathname: string, props: Required<AppProps>): ReactNode {
       <ProductDetailPage
         fetchProductDetail={props.fetchProductDetail}
         stableId={decodeURIComponent(pathname.replace("/products/", ""))}
+      />
+    );
+  }
+
+  if (pathname === "/runs") {
+    return <RunsPage fetchRuns={props.fetchRuns} />;
+  }
+
+  if (pathname.startsWith("/runs/")) {
+    return (
+      <RunDetailPage
+        fetchRunDetail={props.fetchRunDetail}
+        runId={Number(pathname.replace("/runs/", ""))}
       />
     );
   }
@@ -615,6 +675,347 @@ function ProductDetailPage({
   );
 }
 
+function RunsPage({ fetchRuns }: { fetchRuns: RunsFetcher }) {
+  const [tableState, setTableState] = useState(() =>
+    parseRunsTableState(window.location.search),
+  );
+  const [runs, setRuns] = useState<DashboardRunList | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setIsRefreshing(true);
+    setError(null);
+
+    try {
+      setRuns(await fetchRuns(tableState));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [fetchRuns, tableState]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const updateTableState = (next: Partial<RunsTableState>) => {
+    const updated = { ...tableState, ...next };
+    setTableState(updated);
+    navigateTo(`/runs?${serializeRunsTableState(updated)}`);
+  };
+
+  return (
+    <>
+      <header className="dashboard-header">
+        <div>
+          <p className="ledger-label">Watcher dashboard</p>
+          <h1>Runs</h1>
+        </div>
+        <button type="button" onClick={() => void refresh()}>
+          {isRefreshing ? "Refreshing..." : "Refresh Runs"}
+        </button>
+      </header>
+
+      <section className="product-toolbar" aria-label="Run filters">
+        <label>
+          Status
+          <select
+            aria-label="Run status"
+            onChange={(event) =>
+              updateTableState({
+                status: parseRunStatus(event.currentTarget.value),
+                page: 1,
+              })
+            }
+            value={tableState.status ?? "all"}
+          >
+            <option value="all">All statuses</option>
+            {RUN_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Rows
+          <select
+            aria-label="Rows per page"
+            onChange={(event) =>
+              updateTableState({
+                pageSize: Number(event.currentTarget.value),
+                page: 1,
+              })
+            }
+            value={tableState.pageSize}
+          >
+            {RUN_PAGE_SIZE_OPTIONS.map((pageSize) => (
+              <option key={pageSize} value={pageSize}>
+                {pageSize}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Sort
+          <select
+            value={`${tableState.sortBy}.${tableState.sortDirection}`}
+            onChange={(event) => {
+              const [sortBy, sortDirection] =
+                event.currentTarget.value.split(".");
+              updateTableState({
+                sortBy: parseRunSort(sortBy),
+                sortDirection: sortDirection === "asc" ? "asc" : "desc",
+                page: 1,
+              });
+            }}
+          >
+            <option value="startedAt.desc">Started, newest</option>
+            <option value="startedAt.asc">Started, oldest</option>
+            <option value="finishedAt.desc">Finished, newest</option>
+            <option value="status.asc">Status</option>
+            <option value="productCount.desc">Product count</option>
+          </select>
+        </label>
+      </section>
+
+      {error ? <p className="error-panel">{error}</p> : null}
+
+      {runs ? (
+        <>
+          <RunsTable runs={runs.runs} />
+          <footer className="table-footer">
+            <span>
+              Page {runs.pagination.page} of {runs.pagination.totalPages},{" "}
+              {runs.pagination.totalItems} Runs
+            </span>
+            <span className="pagination-controls">
+              <button
+                className="ghost-button"
+                disabled={tableState.page <= 1}
+                type="button"
+                onClick={() =>
+                  updateTableState({ page: Math.max(1, tableState.page - 1) })
+                }
+              >
+                Previous page
+              </button>
+              <button
+                className="ghost-button"
+                disabled={tableState.page >= runs.pagination.totalPages}
+                type="button"
+                onClick={() =>
+                  updateTableState({
+                    page: Math.min(
+                      runs.pagination.totalPages,
+                      tableState.page + 1,
+                    ),
+                  })
+                }
+              >
+                Next page
+              </button>
+            </span>
+          </footer>
+        </>
+      ) : (
+        <section className="skeleton-table" aria-label="Loading Runs" />
+      )}
+    </>
+  );
+}
+
+function RunsTable({ runs }: { runs: DashboardRunRow[] }) {
+  const columns = useMemo<ColumnDef<DashboardRunRow>[]>(
+    () => [
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => (
+          <span>
+            <StatusChip value={row.original.status} />
+            {row.original.staleRunning ? (
+              <span className="stale-note">
+                Stale-looking, {row.original.staleRunning.minutesSinceStart}m
+              </span>
+            ) : null}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "startedAt",
+        header: "Started",
+        cell: ({ row }) => formatTimestamp(row.original.startedAt),
+      },
+      {
+        accessorKey: "finishedAt",
+        header: "Finished",
+        cell: ({ row }) => formatTimestamp(row.original.finishedAt),
+      },
+      {
+        id: "duration",
+        header: "Duration",
+        cell: ({ row }) => formatDuration(row.original.durationMs),
+      },
+      {
+        accessorKey: "productCount",
+        header: "Products",
+      },
+      {
+        id: "error",
+        header: "Error",
+        cell: ({ row }) => (row.original.hasError ? "Present" : "None"),
+      },
+      {
+        id: "detail",
+        header: "",
+        cell: ({ row }) => <a href={`/runs/${row.original.id}`}>View Run</a>,
+      },
+    ],
+    [],
+  );
+  const table = useReactTable({
+    data: runs,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
+  const parentRef = useRef<HTMLDivElement>(null);
+  const rows = table.getRowModel().rows;
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 56,
+    overscan: 8,
+  });
+  const virtualRows = virtualizer.getVirtualItems();
+  const visibleRows =
+    virtualRows.length > 0
+      ? virtualRows.map((virtualRow) => ({
+          row: rows[virtualRow.index],
+          transform: `translateY(${virtualRow.start}px)`,
+        }))
+      : rows.map((row, index) => ({
+          row,
+          transform: `translateY(${index * 56}px)`,
+        }));
+
+  return (
+    <div className="table-viewport" ref={parentRef}>
+      <Table style={{ minHeight: `${Math.max(rows.length, 1) * 56}px` }}>
+        <thead>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <tr key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <th key={header.id}>
+                  {flexRender(
+                    header.column.columnDef.header,
+                    header.getContext(),
+                  )}
+                </th>
+              ))}
+            </tr>
+          ))}
+        </thead>
+        <tbody>
+          {visibleRows.map(({ row, transform }) =>
+            row ? (
+              <tr key={row.id} style={{ transform }}>
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ) : null,
+          )}
+        </tbody>
+      </Table>
+    </div>
+  );
+}
+
+function RunDetailPage({
+  fetchRunDetail,
+  runId,
+}: {
+  fetchRunDetail: RunDetailFetcher;
+  runId: number;
+}) {
+  const [run, setRun] = useState<DashboardRunRow | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchRunDetail(runId)
+      .then((run) => {
+        if (!cancelled) {
+          setRun(run);
+          setError(run ? null : "Run not found");
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setError(error instanceof Error ? error.message : String(error));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchRunDetail, runId]);
+
+  if (error) {
+    return <p className="error-panel">{error}</p>;
+  }
+
+  if (!run) {
+    return <section className="skeleton-panel" aria-label="Loading Run" />;
+  }
+
+  return (
+    <section className="detail-layout" aria-label={`Run ${run.id} detail`}>
+      <a className="back-link" href="/runs">
+        Back to Runs
+      </a>
+      <article className="detail-panel">
+        <div className="detail-title">
+          <h2>Run #{run.id}</h2>
+          <StatusChip value={run.status} />
+        </div>
+        {run.staleRunning ? (
+          <p className="warning-text">
+            This Run looks stale from persisted timestamps:{" "}
+            {run.staleRunning.minutesSinceStart} minutes since start.
+          </p>
+        ) : null}
+        <dl>
+          <DetailField label="Started">
+            {formatTimestamp(run.startedAt)}
+          </DetailField>
+          <DetailField label="Finished">
+            {formatTimestamp(run.finishedAt)}
+          </DetailField>
+          <DetailField label="Duration">
+            {formatDuration(run.durationMs)}
+          </DetailField>
+          <DetailField label="Products seen">{run.productCount}</DetailField>
+        </dl>
+      </article>
+      <article className="detail-panel">
+        <h2>Error message</h2>
+        {run.errorMessage ? (
+          <pre>{run.errorMessage}</pre>
+        ) : (
+          <p className="muted-text">No error message persisted for this Run.</p>
+        )}
+      </article>
+    </section>
+  );
+}
+
 function SummaryPage({
   fetchSummary,
   refreshIntervalMs,
@@ -781,6 +1182,33 @@ async function fetchProductDetailFromApi(
   return (await response.json()) as DashboardProductDetail;
 }
 
+async function fetchRunsFromApi(
+  state: RunsTableState,
+): Promise<DashboardRunList> {
+  const response = await fetch(`/api/runs?${serializeRunsTableState(state)}`);
+
+  if (!response.ok) {
+    throw new Error(`Runs request failed with HTTP ${response.status}`);
+  }
+
+  return (await response.json()) as DashboardRunList;
+}
+
+async function fetchRunDetailFromApi(
+  runId: number,
+): Promise<DashboardRunRow | null> {
+  const response = await fetch(`/api/runs/${runId}`);
+
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(`Run request failed with HTTP ${response.status}`);
+  }
+
+  return (await response.json()) as DashboardRunRow;
+}
+
 function parseProductListOptions(): DashboardProductListOptions {
   const searchParams = new URLSearchParams(window.location.search);
 
@@ -888,6 +1316,71 @@ function isProductSortField(
   value: string | undefined,
 ): value is DashboardProductSortField {
   return DASHBOARD_PRODUCT_SORT_FIELDS.some((field) => field === value);
+}
+
+function parseRunsTableState(search: string): RunsTableState {
+  const params = new URLSearchParams(search);
+
+  return {
+    status: parseRunStatus(params.get("status")),
+    sortBy: parseRunSort(params.get("sort")),
+    sortDirection: params.get("direction") === "asc" ? "asc" : "desc",
+    page: parsePositiveInteger(
+      params.get("page"),
+      DEFAULT_RUNS_TABLE_STATE.page,
+    ),
+    pageSize: parsePositiveInteger(
+      params.get("pageSize"),
+      DEFAULT_RUNS_TABLE_STATE.pageSize,
+    ),
+  };
+}
+
+function parseRunStatus(value: string | null): RunStatus | undefined {
+  if (isRunStatus(value)) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function serializeRunsTableState(state: RunsTableState): string {
+  const params = new URLSearchParams();
+  if (state.status) {
+    params.set("status", state.status);
+  }
+  params.set("sort", state.sortBy);
+  params.set("direction", state.sortDirection);
+  params.set("page", String(state.page));
+  params.set("pageSize", String(state.pageSize));
+  return params.toString();
+}
+
+function parseRunSort(value: string | null | undefined): DashboardRunSortBy {
+  if (isRunSort(value)) {
+    return value;
+  }
+
+  return DEFAULT_RUNS_TABLE_STATE.sortBy;
+}
+
+function isRunStatus(value: string | null): value is RunStatus {
+  return RUN_STATUSES.some((status) => status === value);
+}
+
+function isRunSort(
+  value: string | null | undefined,
+): value is DashboardRunSortBy {
+  return RUN_SORT_COLUMNS.some((column) => column === value);
+}
+
+function parsePositiveInteger(value: string | null, fallback: number): number {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function ProductIdentity({ product }: { product: DashboardProductRow }) {
@@ -1011,4 +1504,16 @@ function formatTimestamp(value: string | null | undefined): string {
   }
 
   return `${value.slice(11, 19)} UTC`;
+}
+
+function formatDuration(durationMs: number | null): string {
+  if (durationMs === null) {
+    return "none";
+  }
+
+  if (durationMs < 1000) {
+    return `${durationMs}ms`;
+  }
+
+  return `${Math.round(durationMs / 1000)}s`;
 }
