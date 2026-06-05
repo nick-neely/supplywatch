@@ -72,7 +72,7 @@ Use states such as `out-of-stock`, `purchase-button`, `employee-gated-login`,
 Drizzle tools use `./data/supplywatch.sqlite`.
 
 ```bash
-pnpm db:generate                    # create a migration after editing src/state/tables.ts
+pnpm db:generate                    # create a migration after editing packages/state/src/tables.ts
 pnpm db:migrate                     # apply migrations to DATABASE_PATH
 pnpm db:studio                      # open Drizzle Studio for DATABASE_PATH
 DATABASE_PATH=./data/review.sqlite pnpm db:studio

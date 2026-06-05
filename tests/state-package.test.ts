@@ -1,0 +1,51 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  openStateRepository,
+  type ProductRecord,
+  WatcherStateRepository,
+} from "@supplywatch/state";
+import { describe, expect, it } from "vitest";
+
+const PRODUCT: ProductRecord = {
+  stableId: "product-openai-tee",
+  name: "OpenAI Tee",
+  url: "https://supplyco.openai.com/products/openai-tee",
+  imageUrl: "https://cdn.example/openai-tee.png",
+  description: "A public product detail snapshot",
+  collection: "Apparel",
+  price: "$20",
+  normalizedSnapshot: {
+    stableId: "product-openai-tee",
+    name: "OpenAI Tee",
+    buyable: true,
+  },
+  rawFingerprint: "fingerprint-1",
+  buyableState: "publicly_buyable",
+  availableSizes: ["M", "L"],
+  firstSeenAt: "2026-06-04T15:00:00.000Z",
+  lastSeenAt: "2026-06-04T15:05:00.000Z",
+  firstPublicAt: "2026-06-04T15:05:00.000Z",
+  outOfStockConfirmations: 0,
+  retiredAt: null,
+  retirementReason: null,
+};
+
+describe("shared state package", () => {
+  it("exposes persistent watcher state without importing watcher internals", () => {
+    const directory = mkdtempSync(join(tmpdir(), "supplywatch-state-package-"));
+    const databasePath = join(directory, "supplywatch.sqlite");
+    const state = openStateRepository(databasePath);
+
+    try {
+      expect(state.repository).toBeInstanceOf(WatcherStateRepository);
+
+      state.repository.upsertProduct(PRODUCT);
+      expect(state.repository.getProduct(PRODUCT.stableId)).toEqual(PRODUCT);
+    } finally {
+      state.close();
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+});

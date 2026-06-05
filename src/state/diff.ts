@@ -1,6 +1,4 @@
 import { createHash } from "node:crypto";
-import type { DetailInspectionResult } from "../detail/inspection.js";
-import type { DiscoveredProduct } from "../discovery/products.js";
 import type {
   BuyableState,
   EventRecord,
@@ -8,7 +6,9 @@ import type {
   ProductOverride,
   ProductRecord,
   WatcherStateRepository,
-} from "./repository.js";
+} from "@supplywatch/state";
+import type { DetailInspectionResult } from "../detail/inspection.js";
+import type { DiscoveredProduct } from "../discovery/products.js";
 
 export type ProductSnapshotDiffInput = {
   product: DiscoveredProduct;

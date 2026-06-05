@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
+import type { JsonObject } from "@supplywatch/state";
 import * as cheerio from "cheerio";
-import type { JsonObject } from "../state/repository.js";
 
 export type CandidateEvidence = {
   signal: string;

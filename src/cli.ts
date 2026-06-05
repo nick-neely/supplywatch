@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { EventRecord } from "@supplywatch/state";
+import {
+  type OpenStateRepository,
+  openStateRepository,
+} from "@supplywatch/state";
 import { chromium } from "playwright";
 import { loadConfig, redactConfig } from "./config/env.js";
 import {
@@ -26,15 +31,10 @@ import {
   sendDiscordWebhook,
 } from "./notifications/discord.js";
 import {
-  type OpenStateRepository,
-  openStateRepository,
-} from "./state/database.js";
-import {
   diffProductSnapshot,
   type ProductSnapshotDiffResult,
   shouldInspectProductSnapshot,
 } from "./state/diff.js";
-import type { EventRecord } from "./state/repository.js";
 
 type CliConfig = ReturnType<typeof loadConfig>;
 

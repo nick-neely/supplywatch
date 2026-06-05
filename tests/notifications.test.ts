@@ -1,11 +1,14 @@
+import {
+  type EventRecord,
+  type ProductRecord,
+  WatcherStateRepository,
+} from "@supplywatch/state";
 import Database from "better-sqlite3";
 import { describe, expect, it, vi } from "vitest";
 import {
   dispatchPendingNotifications,
   renderDiscordWebhookPayload,
 } from "../src/notifications/discord.js";
-import type { EventRecord, ProductRecord } from "../src/state/repository.js";
-import { WatcherStateRepository } from "../src/state/repository.js";
 
 const CREATED_AT = "2026-06-04T15:00:00.000Z";
 const NOW = "2026-06-04T15:05:00.000Z";

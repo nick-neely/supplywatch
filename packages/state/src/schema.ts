@@ -1,9 +1,13 @@
+import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { STATE_TABLE_NAMES } from "./tables.js";
 
 const DRIZZLE_MIGRATIONS_TABLE = "__drizzle_migrations";
+const STATE_MIGRATIONS_FOLDER = fileURLToPath(
+  new URL("../drizzle", import.meta.url),
+);
 const INITIAL_MIGRATION = {
   hash: "592b61dbdbb0ed12fec6147aece3ed959837cc6214117a9befe97e2b1814c493",
   createdAt: 1780593124788,
@@ -16,7 +20,7 @@ export function initializeStateSchema(database: Database.Database): void {
     recordInitialMigration(database);
   }
 
-  migrate(drizzle(database), { migrationsFolder: "drizzle" });
+  migrate(drizzle(database), { migrationsFolder: STATE_MIGRATIONS_FOLDER });
 }
 
 function hasUnrecordedInitialStateSchema(database: Database.Database): boolean {

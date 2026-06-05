@@ -10,8 +10,8 @@ if (databaseUrl !== ":memory:") {
 }
 
 export default defineConfig({
-  schema: "./src/state/tables.ts",
-  out: "./drizzle",
+  schema: "./packages/state/src/tables.ts",
+  out: "./packages/state/drizzle",
   dialect: "sqlite",
   dbCredentials: {
     url: databaseUrl,

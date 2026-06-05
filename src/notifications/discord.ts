@@ -2,7 +2,7 @@ import type {
   JsonObject,
   PersistedEventRecord,
   WatcherStateRepository,
-} from "../state/repository.js";
+} from "@supplywatch/state";
 
 export type DiscordWebhookPayload = {
   content: string | null;

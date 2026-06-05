@@ -1,11 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { openStateRepository } from "@supplywatch/state";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCli } from "../src/cli.js";
 import type { DetailInspectionResult } from "../src/detail/inspection.js";
 import type { DiscoveredProduct } from "../src/discovery/products.js";
-import { openStateRepository } from "../src/state/database.js";
 
 const DISCOVERED_PRODUCT: DiscoveredProduct = {
   stableId: "url-products-public-drop-tee",

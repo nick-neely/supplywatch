@@ -1,3 +1,4 @@
+import { type ProductRecord, WatcherStateRepository } from "@supplywatch/state";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import type { DetailInspectionResult } from "../src/detail/inspection.js";
@@ -6,8 +7,6 @@ import {
   diffProductSnapshot,
   shouldInspectProductSnapshot,
 } from "../src/state/diff.js";
-import type { ProductRecord } from "../src/state/repository.js";
-import { WatcherStateRepository } from "../src/state/repository.js";
 
 const OBSERVED_AT = "2026-06-04T15:00:00.000Z";
 const LATER = "2026-06-04T15:05:00.000Z";

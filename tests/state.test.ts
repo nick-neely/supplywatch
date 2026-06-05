@@ -1,16 +1,16 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import Database from "better-sqlite3";
-import { describe, expect, it } from "vitest";
-import { openStateRepository } from "../src/state/database.js";
 import {
   type EventRecord,
+  initializeStateSchema,
+  openStateRepository,
   type ProductOverride,
   type ProductRecord,
   WatcherStateRepository,
-} from "../src/state/repository.js";
-import { initializeStateSchema } from "../src/state/schema.js";
+} from "@supplywatch/state";
+import Database from "better-sqlite3";
+import { describe, expect, it } from "vitest";
 
 const PRODUCT_SNAPSHOT: ProductRecord = {
   stableId: "product-openai-tee",
