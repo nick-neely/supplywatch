@@ -38,12 +38,24 @@ export type RunsTableState = {
 
 const DEFAULT_REFRESH_INTERVAL_MS = 15_000;
 const RUN_STATUSES = ["running", "completed", "failed"] as const;
+const RUN_SORT_COLUMNS = [
+  "status",
+  "startedAt",
+  "finishedAt",
+  "productCount",
+] as const satisfies readonly DashboardRunSortBy[];
+const RUN_PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 const DEFAULT_RUNS_TABLE_STATE: RunsTableState = {
   sortBy: "startedAt",
   sortDirection: "desc",
   page: 1,
   pageSize: 25,
 };
+
+type DashboardRoute =
+  | { kind: "summary" }
+  | { kind: "runs" }
+  | { kind: "runDetail"; runId: number };
 
 export function App({
   fetchSummary = fetchSummaryFromApi,
@@ -60,44 +72,33 @@ export function App({
   }, []);
 
   const path = new URL(locationKey).pathname;
-  const runDetailMatch = /^\/runs\/(\d+)$/.exec(path);
+  const route = parseDashboardRoute(path);
+  const navigate = (url: string) => {
+    window.history.pushState(null, "", url);
+    setLocationKey(window.location.href);
+  };
 
   return (
     <main className="dashboard-shell">
       <header className="dashboard-header">
         <div>
           <p className="ledger-label">Watcher dashboard</p>
-          <h1>
-            {runDetailMatch
-              ? "Run detail"
-              : path === "/runs"
-                ? "Runs"
-                : "Supplywatch summary"}
-          </h1>
+          <h1>{dashboardTitle(route)}</h1>
         </div>
         <nav className="dashboard-nav" aria-label="Dashboard sections">
-          <a className={path === "/" ? "active" : ""} href="/">
+          <a className={route.kind === "summary" ? "active" : ""} href="/">
             Summary
           </a>
-          <a className={path.startsWith("/runs") ? "active" : ""} href="/runs">
+          <a className={route.kind !== "summary" ? "active" : ""} href="/runs">
             Runs
           </a>
         </nav>
       </header>
 
-      {runDetailMatch ? (
-        <RunDetailScreen
-          fetchRunDetail={fetchRunDetail}
-          runId={Number(runDetailMatch[1])}
-        />
-      ) : path === "/runs" ? (
-        <RunsScreen
-          fetchRuns={fetchRuns}
-          onNavigate={(url) => {
-            window.history.pushState(null, "", url);
-            setLocationKey(window.location.href);
-          }}
-        />
+      {route.kind === "runDetail" ? (
+        <RunDetailScreen fetchRunDetail={fetchRunDetail} runId={route.runId} />
+      ) : route.kind === "runs" ? (
+        <RunsScreen fetchRuns={fetchRuns} onNavigate={navigate} />
       ) : (
         <SummaryScreen
           fetchSummary={fetchSummary}
@@ -106,6 +107,34 @@ export function App({
       )}
     </main>
   );
+}
+
+function parseDashboardRoute(path: string): DashboardRoute {
+  const runDetailMatch = /^\/runs\/(\d+)$/.exec(path);
+
+  if (runDetailMatch) {
+    return {
+      kind: "runDetail",
+      runId: Number(runDetailMatch[1]),
+    };
+  }
+
+  if (path === "/runs") {
+    return { kind: "runs" };
+  }
+
+  return { kind: "summary" };
+}
+
+function dashboardTitle(route: DashboardRoute): string {
+  switch (route.kind) {
+    case "runDetail":
+      return "Run detail";
+    case "runs":
+      return "Runs";
+    case "summary":
+      return "Supplywatch summary";
+  }
 }
 
 function SummaryScreen({
@@ -281,10 +310,7 @@ function RunsScreen({
             aria-label="Run status"
             onChange={(event) =>
               updateTableState({
-                status:
-                  event.currentTarget.value === "all"
-                    ? undefined
-                    : (event.currentTarget.value as RunStatus),
+                status: parseRunStatus(event.currentTarget.value),
                 page: 1,
               })
             }
@@ -310,7 +336,7 @@ function RunsScreen({
             }
             value={tableState.pageSize}
           >
-            {[10, 25, 50].map((pageSize) => (
+            {RUN_PAGE_SIZE_OPTIONS.map((pageSize) => (
               <option key={pageSize} value={pageSize}>
                 {pageSize}
               </option>
@@ -333,11 +359,7 @@ function RunsScreen({
             onSort={(sortBy) =>
               updateTableState({
                 sortBy,
-                sortDirection:
-                  tableState.sortBy === sortBy &&
-                  tableState.sortDirection === "asc"
-                    ? "desc"
-                    : "asc",
+                sortDirection: nextSortDirection(tableState, sortBy),
                 page: 1,
               })
             }
@@ -370,6 +392,17 @@ function RunsScreen({
       )}
     </>
   );
+}
+
+function nextSortDirection(
+  tableState: RunsTableState,
+  sortBy: DashboardRunSortBy,
+): DashboardSortDirection {
+  if (tableState.sortBy !== sortBy) {
+    return "asc";
+  }
+
+  return tableState.sortDirection === "asc" ? "desc" : "asc";
 }
 
 function RunsTable({
@@ -464,42 +497,44 @@ function RunsTable({
   return (
     <div className="table-frame">
       <div className="table-scroll" ref={scrollRef}>
-        <Table>
-          <TableHeader>
+        <table>
+          <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
-                    {sortableColumn(header.column.id) ? (
-                      <button
-                        className="sort-button"
-                        type="button"
-                        onClick={() =>
-                          onSort(header.column.id as DashboardRunSortBy)
-                        }
-                      >
-                        {flexRender(
+                {headerGroup.headers.map((header) => {
+                  const sortColumn = parseRunSortColumn(header.column.id);
+
+                  return (
+                    <th key={header.id}>
+                      {sortColumn ? (
+                        <button
+                          className="sort-button"
+                          type="button"
+                          onClick={() => onSort(sortColumn)}
+                        >
+                          {flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                          {sortBy === sortColumn
+                            ? sortDirection === "asc"
+                              ? " ↑"
+                              : " ↓"
+                            : ""}
+                        </button>
+                      ) : (
+                        flexRender(
                           header.column.columnDef.header,
                           header.getContext(),
-                        )}
-                        {sortBy === header.column.id
-                          ? sortDirection === "asc"
-                            ? " ↑"
-                            : " ↓"
-                          : ""}
-                      </button>
-                    ) : (
-                      flexRender(
-                        header.column.columnDef.header,
-                        header.getContext(),
-                      )
-                    )}
-                  </TableHead>
-                ))}
+                        )
+                      )}
+                    </th>
+                  );
+                })}
               </tr>
             ))}
-          </TableHeader>
-          <TableBody>
+          </thead>
+          <tbody>
             {paddingTop > 0 ? (
               <tr>
                 <td colSpan={columns.length} style={{ height: paddingTop }} />
@@ -508,16 +543,16 @@ function RunsTable({
             {virtualRows.map((virtualRow) => {
               const row = rows[virtualRow.index];
               return (
-                <TableRow key={row.id}>
+                <tr key={row.id}>
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
+                    <td key={cell.id}>
                       {flexRender(
                         cell.column.columnDef.cell,
                         cell.getContext(),
                       )}
-                    </TableCell>
+                    </td>
                   ))}
-                </TableRow>
+                </tr>
               );
             })}
             {paddingBottom > 0 ? (
@@ -528,8 +563,8 @@ function RunsTable({
                 />
               </tr>
             ) : null}
-          </TableBody>
-        </Table>
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -655,30 +690,6 @@ function SummaryPanel({
   );
 }
 
-function Table({ children }: { children: ReactNode }) {
-  return <table>{children}</table>;
-}
-
-function TableHeader({ children }: { children: ReactNode }) {
-  return <thead>{children}</thead>;
-}
-
-function TableBody({ children }: { children: ReactNode }) {
-  return <tbody>{children}</tbody>;
-}
-
-function TableHead({ children }: { children: ReactNode }) {
-  return <th>{children}</th>;
-}
-
-function TableRow({ children }: { children: ReactNode }) {
-  return <tr>{children}</tr>;
-}
-
-function TableCell({ children }: { children: ReactNode }) {
-  return <td>{children}</td>;
-}
-
 function StatusChip({ value }: { value: string }) {
   return <span className={`status-chip status-chip-${value}`}>{value}</span>;
 }
@@ -688,9 +699,7 @@ function parseRunsTableState(search: string): RunsTableState {
   const status = params.get("status");
 
   return {
-    status: RUN_STATUSES.includes(status as RunStatus)
-      ? (status as RunStatus)
-      : undefined,
+    status: parseRunStatus(status),
     sortBy: parseRunSort(params.get("sort")),
     sortDirection: params.get("direction") === "asc" ? "asc" : "desc",
     page: parsePositiveInteger(
@@ -702,6 +711,14 @@ function parseRunsTableState(search: string): RunsTableState {
       DEFAULT_RUNS_TABLE_STATE.pageSize,
     ),
   };
+}
+
+function parseRunStatus(value: string | null): RunStatus | undefined {
+  if (isRunStatus(value)) {
+    return value;
+  }
+
+  return undefined;
 }
 
 function serializeRunsTableState(state: RunsTableState): string {
@@ -717,15 +734,7 @@ function serializeRunsTableState(state: RunsTableState): string {
 }
 
 function parseRunSort(value: string | null): DashboardRunSortBy {
-  switch (value) {
-    case "finishedAt":
-    case "status":
-    case "productCount":
-    case "startedAt":
-      return value;
-    default:
-      return DEFAULT_RUNS_TABLE_STATE.sortBy;
-  }
+  return parseRunSortColumn(value) ?? DEFAULT_RUNS_TABLE_STATE.sortBy;
 }
 
 function parsePositiveInteger(value: string | null, fallback: number): number {
@@ -737,10 +746,22 @@ function parsePositiveInteger(value: string | null, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function sortableColumn(columnId: string): boolean {
-  return ["status", "startedAt", "finishedAt", "productCount"].includes(
-    columnId,
-  );
+function isRunStatus(value: string | null): value is RunStatus {
+  return RUN_STATUSES.some((status) => status === value);
+}
+
+function isRunSortColumn(value: string | null): value is DashboardRunSortBy {
+  return RUN_SORT_COLUMNS.some((column) => column === value);
+}
+
+function parseRunSortColumn(
+  value: string | null,
+): DashboardRunSortBy | undefined {
+  if (isRunSortColumn(value)) {
+    return value;
+  }
+
+  return undefined;
 }
 
 function formatTimestamp(value: string | null | undefined): string {

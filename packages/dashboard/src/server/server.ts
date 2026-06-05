@@ -18,6 +18,13 @@ import {
   type RunStatus,
 } from "@supplywatch/state";
 
+const RUN_SORT_COLUMNS = [
+  "startedAt",
+  "finishedAt",
+  "status",
+  "productCount",
+] as const satisfies readonly DashboardRunSortBy[];
+
 export type DashboardServerOptions = {
   databasePath: string;
   host: string;
@@ -143,23 +150,19 @@ function handleRequest(
 }
 
 function parseRunStatus(value: string | null): RunStatus | undefined {
-  if (RUN_STATUSES.includes(value as RunStatus)) {
-    return value as RunStatus;
+  if (isRunStatus(value)) {
+    return value;
   }
 
   return undefined;
 }
 
 function parseRunSortBy(value: string | null): DashboardRunSortBy | undefined {
-  switch (value) {
-    case "startedAt":
-    case "finishedAt":
-    case "status":
-    case "productCount":
-      return value;
-    default:
-      return undefined;
+  if (isRunSortColumn(value)) {
+    return value;
   }
+
+  return undefined;
 }
 
 function parseSortDirection(
@@ -175,6 +178,14 @@ function parsePositiveInteger(value: string | null): number | undefined {
 
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function isRunStatus(value: string | null): value is RunStatus {
+  return RUN_STATUSES.some((status) => status === value);
+}
+
+function isRunSortColumn(value: string | null): value is DashboardRunSortBy {
+  return RUN_SORT_COLUMNS.some((column) => column === value);
 }
 
 function listen(server: Server, port: number, host: string): Promise<void> {

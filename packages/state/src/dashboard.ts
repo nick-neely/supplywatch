@@ -5,6 +5,22 @@ const DEFAULT_STALE_RUNNING_RUN_MINUTES = 30;
 const DEFAULT_RUNS_PAGE = 1;
 const DEFAULT_RUNS_PAGE_SIZE = 25;
 const MAX_RUNS_PAGE_SIZE = 100;
+const DEFAULT_RUN_SORT_BY = "startedAt";
+const DEFAULT_RUN_SORT_DIRECTION = "desc";
+const RUN_SORT_EXPRESSIONS = {
+  finishedAt: "finished_at",
+  productCount: "product_count",
+  startedAt: "started_at",
+  status: "status",
+} as const satisfies Record<DashboardRunSortBy, string>;
+const RUN_SUMMARY_COLUMNS = `
+  id,
+  started_at AS startedAt,
+  finished_at AS finishedAt,
+  status,
+  product_count AS productCount,
+  error_message AS errorMessage
+`;
 
 export type DashboardRunSummary = {
   id: number;
@@ -144,16 +160,11 @@ export function listDashboardRuns(
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const sortBy = normalizeRunSortBy(options.sortBy);
   const sortDirection = normalizeSortDirection(options.sortDirection);
+  const offset = (page - 1) * pageSize;
   const runs = database
     .prepare<Record<string, unknown>, DashboardRunSummary>(
       `
-        SELECT
-          id,
-          started_at AS startedAt,
-          finished_at AS finishedAt,
-          status,
-          product_count AS productCount,
-          error_message AS errorMessage
+        SELECT ${RUN_SUMMARY_COLUMNS}
         FROM runs
         ${options.status ? "WHERE status = @status" : ""}
         ORDER BY ${runSortExpression(sortBy)} ${sortDirection}, id ${sortDirection}
@@ -163,7 +174,7 @@ export function listDashboardRuns(
     .all({
       status: options.status,
       limit: pageSize,
-      offset: (page - 1) * pageSize,
+      offset,
     });
 
   return {
@@ -185,13 +196,7 @@ export function getDashboardRunDetail(
   const run = database
     .prepare<{ id: number }, DashboardRunSummary>(
       `
-        SELECT
-          id,
-          started_at AS startedAt,
-          finished_at AS finishedAt,
-          status,
-          product_count AS productCount,
-          error_message AS errorMessage
+        SELECT ${RUN_SUMMARY_COLUMNS}
         FROM runs
         WHERE id = @id
       `,
@@ -270,16 +275,7 @@ function countRuns(
 }
 
 function runSortExpression(sortBy: DashboardRunSortBy): string {
-  switch (sortBy) {
-    case "finishedAt":
-      return "finished_at";
-    case "status":
-      return "status";
-    case "productCount":
-      return "product_count";
-    case "startedAt":
-      return "started_at";
-  }
+  return RUN_SORT_EXPRESSIONS[sortBy];
 }
 
 function normalizeRunSortBy(
@@ -292,14 +288,14 @@ function normalizeRunSortBy(
     case "startedAt":
       return sortBy;
     default:
-      return "startedAt";
+      return DEFAULT_RUN_SORT_BY;
   }
 }
 
 function normalizeSortDirection(
   sortDirection: DashboardSortDirection | undefined,
 ): DashboardSortDirection {
-  return sortDirection === "asc" ? "asc" : "desc";
+  return sortDirection === "asc" ? "asc" : DEFAULT_RUN_SORT_DIRECTION;
 }
 
 function normalizePositiveInteger(
@@ -319,13 +315,7 @@ function findLatestRun(
   return database
     .prepare<[], DashboardRunSummary>(
       `
-        SELECT
-          id,
-          started_at AS startedAt,
-          finished_at AS finishedAt,
-          status,
-          product_count AS productCount,
-          error_message AS errorMessage
+        SELECT ${RUN_SUMMARY_COLUMNS}
         FROM runs
         ORDER BY started_at DESC, id DESC
         LIMIT 1
