@@ -7,9 +7,15 @@ import {
 } from "node:http";
 import { extname, isAbsolute, join, normalize, sep } from "node:path";
 import {
+  type DashboardRunSortBy,
+  type DashboardSortDirection,
+  getDashboardRunDetail,
   getWatcherDashboardSummary,
+  listDashboardRuns,
   type OpenReadOnlyStateDatabase,
   openReadOnlyStateDatabase,
+  RUN_STATUSES,
+  type RunStatus,
 } from "@supplywatch/state";
 
 export type DashboardServerOptions = {
@@ -92,6 +98,41 @@ function handleRequest(
     return;
   }
 
+  if (url.pathname === "/api/runs") {
+    const runs = listDashboardRuns(state.database, {
+      status: parseRunStatus(url.searchParams.get("status")),
+      sortBy: parseRunSortBy(url.searchParams.get("sort")),
+      sortDirection: parseSortDirection(url.searchParams.get("direction")),
+      page: parsePositiveInteger(url.searchParams.get("page")),
+      pageSize: parsePositiveInteger(url.searchParams.get("pageSize")),
+      now: options.now?.(),
+    });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify(runs));
+    return;
+  }
+
+  const runDetailMatch = /^\/api\/runs\/(\d+)$/.exec(url.pathname);
+  if (runDetailMatch) {
+    const run = getDashboardRunDetail(
+      state.database,
+      Number(runDetailMatch[1]),
+      {
+        now: options.now?.(),
+      },
+    );
+
+    if (!run) {
+      response.writeHead(404, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: "Run not found" }));
+      return;
+    }
+
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify(run));
+    return;
+  }
+
   if (options.staticDir) {
     serveStaticFile(options.staticDir, url.pathname, response);
     return;
@@ -99,6 +140,41 @@ function handleRequest(
 
   response.writeHead(404, { "content-type": "application/json" });
   response.end(JSON.stringify({ error: "Not found" }));
+}
+
+function parseRunStatus(value: string | null): RunStatus | undefined {
+  if (RUN_STATUSES.includes(value as RunStatus)) {
+    return value as RunStatus;
+  }
+
+  return undefined;
+}
+
+function parseRunSortBy(value: string | null): DashboardRunSortBy | undefined {
+  switch (value) {
+    case "startedAt":
+    case "finishedAt":
+    case "status":
+    case "productCount":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function parseSortDirection(
+  value: string | null,
+): DashboardSortDirection | undefined {
+  return value === "asc" || value === "desc" ? value : undefined;
+}
+
+function parsePositiveInteger(value: string | null): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function listen(server: Server, port: number, host: string): Promise<void> {

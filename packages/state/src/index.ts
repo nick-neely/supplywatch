@@ -1,5 +1,15 @@
 export {
+  type DashboardRunDetailOptions,
+  type DashboardRunList,
+  type DashboardRunListOptions,
+  type DashboardRunRow,
+  type DashboardRunSortBy,
+  type DashboardRunStaleState,
+  type DashboardRunsPagination,
+  type DashboardSortDirection,
+  getDashboardRunDetail,
   getWatcherDashboardSummary,
+  listDashboardRuns,
   type WatcherDashboardSummary,
   type WatcherDashboardSummaryOptions,
 } from "./dashboard.js";
