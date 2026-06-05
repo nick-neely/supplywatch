@@ -212,6 +212,12 @@ function handleRequest(
     return;
   }
 
+  if (url.pathname.startsWith("/api/")) {
+    response.writeHead(404, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: "Not found" }));
+    return;
+  }
+
   if (options.staticDir) {
     serveStaticFile(options.staticDir, url.pathname, response);
     return;

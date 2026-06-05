@@ -195,17 +195,28 @@ function renderRoute(pathname: string, props: Required<AppProps>): ReactNode {
     return (
       <ProductDetailPage
         fetchProductDetail={props.fetchProductDetail}
+        refreshIntervalMs={props.refreshIntervalMs}
         stableId={decodeURIComponent(pathname.replace("/products/", ""))}
       />
     );
   }
 
   if (pathname === "/runs") {
-    return <RunsPage fetchRuns={props.fetchRuns} />;
+    return (
+      <RunsPage
+        fetchRuns={props.fetchRuns}
+        refreshIntervalMs={props.refreshIntervalMs}
+      />
+    );
   }
 
   if (pathname === "/events") {
-    return <EventsPage fetchEvents={props.fetchEvents} />;
+    return (
+      <EventsPage
+        fetchEvents={props.fetchEvents}
+        refreshIntervalMs={props.refreshIntervalMs}
+      />
+    );
   }
 
   if (pathname.startsWith("/events/")) {
@@ -213,6 +224,7 @@ function renderRoute(pathname: string, props: Required<AppProps>): ReactNode {
       <EventDetailPage
         fetchEventDetail={props.fetchEventDetail}
         eventId={Number(pathname.replace("/events/", ""))}
+        refreshIntervalMs={props.refreshIntervalMs}
       />
     );
   }
@@ -221,12 +233,18 @@ function renderRoute(pathname: string, props: Required<AppProps>): ReactNode {
     return (
       <RunDetailPage
         fetchRunDetail={props.fetchRunDetail}
+        refreshIntervalMs={props.refreshIntervalMs}
         runId={Number(pathname.replace("/runs/", ""))}
       />
     );
   }
 
-  return <ProductsPage fetchProducts={props.fetchProducts} />;
+  return (
+    <ProductsPage
+      fetchProducts={props.fetchProducts}
+      refreshIntervalMs={props.refreshIntervalMs}
+    />
+  );
 }
 
 function useRoute(): { pathname: string; search: string } {
@@ -257,6 +275,25 @@ function useRoute(): { pathname: string; search: string } {
 function navigateTo(url: string): void {
   window.history.pushState({}, "", url);
   window.dispatchEvent(new Event("supplywatch:navigate"));
+}
+
+function useDashboardRefresh(
+  refresh: () => Promise<void>,
+  refreshIntervalMs: number,
+): void {
+  useEffect(() => {
+    void refresh();
+
+    if (refreshIntervalMs <= 0) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refresh();
+    }, refreshIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [refresh, refreshIntervalMs]);
 }
 
 const PRODUCT_TABLE_COLUMNS: ColumnDef<DashboardProductRow>[] = [
@@ -319,8 +356,10 @@ const PRODUCT_TABLE_COLUMNS: ColumnDef<DashboardProductRow>[] = [
 
 function ProductsPage({
   fetchProducts,
+  refreshIntervalMs,
 }: {
   fetchProducts: ProductListFetcher;
+  refreshIntervalMs: number;
 }) {
   const [options, setOptions] = useState(parseProductListOptions);
   const [page, setPage] = useState<DashboardProductPage | null>(null);
@@ -340,9 +379,7 @@ function ProductsPage({
     }
   }, [fetchProducts, options]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  useDashboardRefresh(refresh, refreshIntervalMs);
 
   const updateOptions = (next: DashboardProductListOptions) => {
     setOptions(next);
@@ -589,35 +626,33 @@ function VirtualizedTable<TData extends RowData>({
 
 function ProductDetailPage({
   fetchProductDetail,
+  refreshIntervalMs,
   stableId,
 }: {
   fetchProductDetail: ProductDetailFetcher;
+  refreshIntervalMs: number;
   stableId: string;
 }) {
   const [product, setProduct] = useState<DashboardProductDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
+  const refresh = useCallback(async () => {
+    setIsRefreshing(true);
 
-    fetchProductDetail(stableId)
-      .then((product) => {
-        if (!cancelled) {
-          setProduct(product);
-          setError(product ? null : "Product not found");
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setError(error instanceof Error ? error.message : String(error));
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    try {
+      const product = await fetchProductDetail(stableId);
+      setProduct(product);
+      setError(product ? null : "Product not found");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRefreshing(false);
+    }
   }, [fetchProductDetail, stableId]);
+
+  useDashboardRefresh(refresh, refreshIntervalMs);
 
   if (error) {
     return <p className="error-panel">{error}</p>;
@@ -647,6 +682,9 @@ function ProductDetailPage({
             Open source
           </a>
         ) : null}
+        <button type="button" onClick={() => void refresh()}>
+          {isRefreshing ? "Refreshing..." : "Refresh Product"}
+        </button>
       </header>
 
       <section className="detail-grid">
@@ -744,7 +782,13 @@ function ProductDetailPage({
   );
 }
 
-function EventsPage({ fetchEvents }: { fetchEvents: EventsFetcher }) {
+function EventsPage({
+  fetchEvents,
+  refreshIntervalMs,
+}: {
+  fetchEvents: EventsFetcher;
+  refreshIntervalMs: number;
+}) {
   const [tableState, setTableState] = useState(() =>
     parseEventsTableState(window.location.search),
   );
@@ -765,9 +809,7 @@ function EventsPage({ fetchEvents }: { fetchEvents: EventsFetcher }) {
     }
   }, [fetchEvents, tableState]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  useDashboardRefresh(refresh, refreshIntervalMs);
 
   const updateTableState = (next: Partial<EventsTableState>) => {
     const updated = { ...tableState, ...next };
@@ -990,33 +1032,31 @@ function EventsTable({ events }: { events: DashboardEventRow[] }) {
 function EventDetailPage({
   fetchEventDetail,
   eventId,
+  refreshIntervalMs,
 }: {
   fetchEventDetail: EventDetailFetcher;
   eventId: number;
+  refreshIntervalMs: number;
 }) {
   const [event, setEvent] = useState<DashboardEventDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
+  const refresh = useCallback(async () => {
+    setIsRefreshing(true);
 
-    fetchEventDetail(eventId)
-      .then((event) => {
-        if (!cancelled) {
-          setEvent(event);
-          setError(event ? null : "Event not found");
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setError(error instanceof Error ? error.message : String(error));
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    try {
+      const event = await fetchEventDetail(eventId);
+      setEvent(event);
+      setError(event ? null : "Event not found");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRefreshing(false);
+    }
   }, [eventId, fetchEventDetail]);
+
+  useDashboardRefresh(refresh, refreshIntervalMs);
 
   if (error) {
     return <p className="error-panel">{error}</p>;
@@ -1028,9 +1068,14 @@ function EventDetailPage({
 
   return (
     <section className="detail-layout" aria-label={`Event ${event.id} detail`}>
-      <a className="back-link" href="/events">
-        Back to Events
-      </a>
+      <div className="detail-actions">
+        <a className="back-link" href="/events">
+          Back to Events
+        </a>
+        <button type="button" onClick={() => void refresh()}>
+          {isRefreshing ? "Refreshing..." : "Refresh Event"}
+        </button>
+      </div>
       <article className="detail-panel">
         <div className="detail-title">
           <h2>Event #{event.id}</h2>
@@ -1076,7 +1121,13 @@ function EventDetailPage({
   );
 }
 
-function RunsPage({ fetchRuns }: { fetchRuns: RunsFetcher }) {
+function RunsPage({
+  fetchRuns,
+  refreshIntervalMs,
+}: {
+  fetchRuns: RunsFetcher;
+  refreshIntervalMs: number;
+}) {
   const [tableState, setTableState] = useState(() =>
     parseRunsTableState(window.location.search),
   );
@@ -1097,9 +1148,7 @@ function RunsPage({ fetchRuns }: { fetchRuns: RunsFetcher }) {
     }
   }, [fetchRuns, tableState]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  useDashboardRefresh(refresh, refreshIntervalMs);
 
   const updateTableState = (next: Partial<RunsTableState>) => {
     const updated = { ...tableState, ...next };
@@ -1288,34 +1337,32 @@ function RunsTable({ runs }: { runs: DashboardRunRow[] }) {
 
 function RunDetailPage({
   fetchRunDetail,
+  refreshIntervalMs,
   runId,
 }: {
   fetchRunDetail: RunDetailFetcher;
+  refreshIntervalMs: number;
   runId: number;
 }) {
   const [run, setRun] = useState<DashboardRunRow | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
+  const refresh = useCallback(async () => {
+    setIsRefreshing(true);
 
-    fetchRunDetail(runId)
-      .then((run) => {
-        if (!cancelled) {
-          setRun(run);
-          setError(run ? null : "Run not found");
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setError(error instanceof Error ? error.message : String(error));
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    try {
+      const run = await fetchRunDetail(runId);
+      setRun(run);
+      setError(run ? null : "Run not found");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsRefreshing(false);
+    }
   }, [fetchRunDetail, runId]);
+
+  useDashboardRefresh(refresh, refreshIntervalMs);
 
   if (error) {
     return <p className="error-panel">{error}</p>;
@@ -1327,9 +1374,14 @@ function RunDetailPage({
 
   return (
     <section className="detail-layout" aria-label={`Run ${run.id} detail`}>
-      <a className="back-link" href="/runs">
-        Back to Runs
-      </a>
+      <div className="detail-actions">
+        <a className="back-link" href="/runs">
+          Back to Runs
+        </a>
+        <button type="button" onClick={() => void refresh()}>
+          {isRefreshing ? "Refreshing..." : "Refresh Run"}
+        </button>
+      </div>
       <article className="detail-panel">
         <div className="detail-title">
           <h2>Run #{run.id}</h2>
@@ -1390,19 +1442,7 @@ function SummaryPage({
     }
   }, [fetchSummary]);
 
-  useEffect(() => {
-    void refresh();
-
-    if (refreshIntervalMs <= 0) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      void refresh();
-    }, refreshIntervalMs);
-
-    return () => window.clearInterval(interval);
-  }, [refresh, refreshIntervalMs]);
+  useDashboardRefresh(refresh, refreshIntervalMs);
 
   return (
     <>

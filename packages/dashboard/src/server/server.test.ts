@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openStateRepository } from "@supplywatch/state";
@@ -309,5 +309,48 @@ describe("dashboard API server", () => {
         port: 0,
       }),
     ).rejects.toThrow("Unable to open dashboard database read-only");
+  });
+
+  it("serves built dashboard assets for app routes without swallowing missing API routes", async () => {
+    const directory = mkdtempSync(
+      join(tmpdir(), "supplywatch-dashboard-static-"),
+    );
+    const databasePath = join(directory, "supplywatch.sqlite");
+    const staticDir = join(directory, "client");
+    const state = openStateRepository(databasePath);
+    state.close();
+    mkdirSync(staticDir);
+    writeFileSync(
+      join(staticDir, "index.html"),
+      '<html><body><div id="root">dashboard shell</div></body></html>',
+    );
+
+    try {
+      const server = await createDashboardServer({
+        databasePath,
+        host: "127.0.0.1",
+        port: 0,
+        staticDir,
+      });
+      servers.push(server);
+
+      const appRouteResponse = await fetch(`${server.url}/products/tee-static`);
+      const missingApiResponse = await fetch(`${server.url}/api/not-a-route`);
+
+      expect(appRouteResponse.status).toBe(200);
+      expect(appRouteResponse.headers.get("content-type")).toBe("text/html");
+      await expect(appRouteResponse.text()).resolves.toContain(
+        "dashboard shell",
+      );
+      expect(missingApiResponse.status).toBe(404);
+      expect(missingApiResponse.headers.get("content-type")).toBe(
+        "application/json",
+      );
+      await expect(missingApiResponse.json()).resolves.toEqual({
+        error: "Not found",
+      });
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
   });
 });

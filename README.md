@@ -58,6 +58,8 @@ pnpm build
 pnpm start
 pnpm typecheck
 pnpm test
+pnpm verify
+pnpm watcher:verify
 ```
 
 Fixture capture renders the supplied product/detail URL with Playwright and saves
@@ -88,13 +90,18 @@ It binds to `127.0.0.1` by default and reads the configured SQLite database
 without applying migrations or writing state.
 
 ```bash
+pnpm dashboard:dev
 pnpm dashboard:build
 DASHBOARD_DATABASE_PATH=./data/supplywatch.sqlite pnpm dashboard:start
+pnpm dashboard:verify
 ```
 
 `DASHBOARD_DATABASE_PATH` is preferred for the dashboard. `DATABASE_PATH` is
-accepted as a local fallback. The summary API is served at `/api/summary`, and
-the UI refreshes automatically with a manual refresh action.
+accepted as a local fallback. `dashboard:dev` runs the Vite frontend with `/api`
+proxied to the local dashboard API server on port 4174; `dashboard:start` serves
+the built dashboard assets and API routes from one local Node process. The
+summary, Products, Events, and Runs pages refresh automatically with manual
+refresh actions.
 
 ## Docker
 

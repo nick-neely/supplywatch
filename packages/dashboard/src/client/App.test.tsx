@@ -19,6 +19,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) {
     act(() => root.unmount());
   }
+  vi.useRealTimers();
   document.body.innerHTML = "";
   window.history.pushState({}, "", "/");
 });
@@ -150,6 +151,84 @@ describe("Watcher dashboard app", () => {
     expect(window.location.pathname).toBe("/products");
     expect(window.location.search).toContain("search=hat");
     expect(window.location.search).toContain("page=1");
+  });
+
+  it("auto-refreshes Products on the configured dashboard interval", async () => {
+    vi.useFakeTimers();
+    window.history.pushState({}, "", "/products");
+    const fetchProducts = vi
+      .fn<ProductListFetcher>()
+      .mockResolvedValueOnce({
+        products: [
+          {
+            stableId: "tee-auto",
+            name: "OpenAI Logo Tee",
+            url: "https://example.com/products/tee",
+            imageUrl: null,
+            collection: "Apparel",
+            price: "$42",
+            availabilityState: "out_of_stock",
+            availableSizes: [],
+            firstSeenAt: "2026-06-04T12:00:00.000Z",
+            lastSeenAt: "2026-06-04T15:00:00.000Z",
+            firstPublicAt: null,
+            isRetired: false,
+            retiredAt: null,
+            retirementReason: null,
+            outOfStockConfirmations: 1,
+            overrideBadges: [],
+          },
+        ],
+        page: 1,
+        pageSize: 50,
+        total: 1,
+        totalPages: 1,
+      })
+      .mockResolvedValueOnce({
+        products: [
+          {
+            stableId: "hat-auto",
+            name: "OpenAI Logo Hat",
+            url: "https://example.com/products/hat",
+            imageUrl: null,
+            collection: "Apparel",
+            price: "$35",
+            availabilityState: "publicly_buyable",
+            availableSizes: ["OS"],
+            firstSeenAt: "2026-06-04T12:00:00.000Z",
+            lastSeenAt: "2026-06-04T15:01:00.000Z",
+            firstPublicAt: "2026-06-04T15:01:00.000Z",
+            isRetired: false,
+            retiredAt: null,
+            retirementReason: null,
+            outOfStockConfirmations: 0,
+            overrideBadges: [],
+          },
+        ],
+        page: 1,
+        pageSize: 50,
+        total: 1,
+        totalPages: 1,
+      });
+
+    renderApp(
+      <App
+        fetchProducts={fetchProducts}
+        fetchSummary={idleSummary}
+        refreshIntervalMs={1_000}
+      />,
+    );
+
+    await flushReact();
+    expect(document.body.textContent).toContain("OpenAI Logo Tee");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+
+    await flushReact();
+    expect(document.body.textContent).toContain("OpenAI Logo Hat");
+    expect(fetchProducts).toHaveBeenCalledTimes(2);
   });
 
   it("renders Product detail with image fallback and collapsible snapshot evidence", async () => {
@@ -374,4 +453,10 @@ function clickButton(container: HTMLElement, name: string): void {
   }
 
   button.click();
+}
+
+async function flushReact(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+  });
 }
