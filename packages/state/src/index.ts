@@ -1,4 +1,6 @@
 export {
+  DASHBOARD_PRODUCT_SORT_FIELDS,
+  DASHBOARD_PRODUCT_WATCH_STATUSES,
   type DashboardProductDetail,
   type DashboardProductEvent,
   type DashboardProductListOptions,

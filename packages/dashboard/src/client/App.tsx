@@ -5,9 +5,15 @@ import type {
   DashboardProductPage,
   DashboardProductRow,
   DashboardProductSort,
+  DashboardProductSortField,
   DashboardProductWatchStatus,
   WatcherDashboardSummary,
 } from "@supplywatch/state";
+import {
+  DASHBOARD_PRODUCT_SORT_FIELDS,
+  DASHBOARD_PRODUCT_WATCH_STATUSES,
+} from "@supplywatch/state/dashboard";
+import { BUYABLE_STATES } from "@supplywatch/state/types";
 import {
   type ColumnDef,
   flexRender,
@@ -16,7 +22,7 @@ import {
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { CSSProperties, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "./styles.css";
 
 export type SummaryFetcher = () => Promise<WatcherDashboardSummary>;
@@ -35,12 +41,11 @@ export type AppProps = {
 };
 
 const DEFAULT_REFRESH_INTERVAL_MS = 15_000;
-const AVAILABILITY_STATES: BuyableState[] = [
-  "unknown",
-  "out_of_stock",
-  "publicly_buyable",
-  "employee_only",
-];
+const DEFAULT_PRODUCT_PAGE_SIZE = 50;
+const DEFAULT_PRODUCT_SORT: DashboardProductSort = {
+  field: "lastSeenAt",
+  direction: "desc",
+};
 
 export function App({
   fetchSummary = fetchSummaryFromApi,
@@ -67,23 +72,36 @@ export function App({
         </a>
       </nav>
 
-      {route.pathname === "/summary" ? (
-        <SummaryPage
-          fetchSummary={fetchSummary}
-          refreshIntervalMs={refreshIntervalMs}
-        />
-      ) : route.pathname.startsWith("/products/") ? (
-        <ProductDetailPage
-          fetchProductDetail={fetchProductDetail}
-          stableId={decodeURIComponent(
-            route.pathname.replace("/products/", ""),
-          )}
-        />
-      ) : (
-        <ProductsPage fetchProducts={fetchProducts} />
-      )}
+      {renderRoute(route.pathname, {
+        fetchSummary,
+        fetchProducts,
+        fetchProductDetail,
+        refreshIntervalMs,
+      })}
     </main>
   );
+}
+
+function renderRoute(pathname: string, props: Required<AppProps>): ReactNode {
+  if (pathname === "/summary") {
+    return (
+      <SummaryPage
+        fetchSummary={props.fetchSummary}
+        refreshIntervalMs={props.refreshIntervalMs}
+      />
+    );
+  }
+
+  if (pathname.startsWith("/products/")) {
+    return (
+      <ProductDetailPage
+        fetchProductDetail={props.fetchProductDetail}
+        stableId={decodeURIComponent(pathname.replace("/products/", ""))}
+      />
+    );
+  }
+
+  return <ProductsPage fetchProducts={props.fetchProducts} />;
 }
 
 function useRoute(): { pathname: string; search: string } {
@@ -115,6 +133,64 @@ function navigateTo(url: string): void {
   window.history.pushState({}, "", url);
   window.dispatchEvent(new Event("supplywatch:navigate"));
 }
+
+const PRODUCT_TABLE_COLUMNS: ColumnDef<DashboardProductRow>[] = [
+  {
+    accessorKey: "name",
+    header: "Product",
+    cell: ({ row }) => <ProductIdentity product={row.original} />,
+  },
+  {
+    accessorKey: "collection",
+    header: "Collection",
+    cell: ({ row }) => row.original.collection ?? "none",
+  },
+  {
+    accessorKey: "price",
+    header: "Price",
+    cell: ({ row }) => row.original.price ?? "none",
+  },
+  {
+    accessorKey: "availabilityState",
+    header: "Availability state",
+    cell: ({ row }) => (
+      <StatusChip value={availabilityLabel(row.original.availabilityState)} />
+    ),
+  },
+  {
+    accessorKey: "availableSizes",
+    header: "Sizes",
+    cell: ({ row }) =>
+      row.original.availableSizes.length > 0
+        ? row.original.availableSizes.join(", ")
+        : "none",
+  },
+  {
+    accessorKey: "lastSeenAt",
+    header: "Last seen",
+    cell: ({ row }) => formatTimestamp(row.original.lastSeenAt),
+  },
+  {
+    accessorKey: "firstSeenAt",
+    header: "First seen",
+    cell: ({ row }) => formatTimestamp(row.original.firstSeenAt),
+  },
+  {
+    accessorKey: "isRetired",
+    header: "Watch status",
+    cell: ({ row }) => (row.original.isRetired ? "retired" : "active"),
+  },
+  {
+    accessorKey: "overrideBadges",
+    header: "Product overrides",
+    cell: ({ row }) =>
+      row.original.overrideBadges.length > 0 ? (
+        <ChipList values={row.original.overrideBadges} />
+      ) : (
+        "none"
+      ),
+  },
+];
 
 function ProductsPage({
   fetchProducts,
@@ -148,72 +224,9 @@ function ProductsPage({
     navigateTo(`/products?${productListSearchParams(next).toString()}`);
   };
 
-  const products = page?.products ?? [];
-  const columns = useMemo<ColumnDef<DashboardProductRow>[]>(
-    () => [
-      {
-        accessorKey: "name",
-        header: "Product",
-        cell: ({ row }) => <ProductIdentity product={row.original} />,
-      },
-      {
-        accessorKey: "collection",
-        header: "Collection",
-        cell: ({ row }) => row.original.collection ?? "none",
-      },
-      {
-        accessorKey: "price",
-        header: "Price",
-        cell: ({ row }) => row.original.price ?? "none",
-      },
-      {
-        accessorKey: "availabilityState",
-        header: "Availability state",
-        cell: ({ row }) => (
-          <StatusChip
-            value={availabilityLabel(row.original.availabilityState)}
-          />
-        ),
-      },
-      {
-        accessorKey: "availableSizes",
-        header: "Sizes",
-        cell: ({ row }) =>
-          row.original.availableSizes.length > 0
-            ? row.original.availableSizes.join(", ")
-            : "none",
-      },
-      {
-        accessorKey: "lastSeenAt",
-        header: "Last seen",
-        cell: ({ row }) => formatTimestamp(row.original.lastSeenAt),
-      },
-      {
-        accessorKey: "firstSeenAt",
-        header: "First seen",
-        cell: ({ row }) => formatTimestamp(row.original.firstSeenAt),
-      },
-      {
-        accessorKey: "isRetired",
-        header: "Watch status",
-        cell: ({ row }) => (row.original.isRetired ? "retired" : "active"),
-      },
-      {
-        accessorKey: "overrideBadges",
-        header: "Product overrides",
-        cell: ({ row }) =>
-          row.original.overrideBadges.length > 0 ? (
-            <ChipList values={row.original.overrideBadges} />
-          ) : (
-            "none"
-          ),
-      },
-    ],
-    [],
-  );
   const table = useReactTable({
-    data: products,
-    columns,
+    data: page?.products ?? [],
+    columns: PRODUCT_TABLE_COLUMNS,
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
     manualSorting: true,
@@ -267,15 +280,15 @@ function ProductsPage({
             onChange={(event) =>
               updateOptions({
                 ...options,
-                availabilityStates: event.currentTarget.value
-                  ? [event.currentTarget.value as BuyableState]
-                  : [],
+                availabilityStates: selectedAvailabilityStates(
+                  event.currentTarget.value,
+                ),
                 page: 1,
               })
             }
           >
             <option value="">All</option>
-            {AVAILABILITY_STATES.map((state) => (
+            {BUYABLE_STATES.map((state) => (
               <option key={state} value={state}>
                 {availabilityLabel(state)}
               </option>
@@ -289,8 +302,7 @@ function ProductsPage({
             onChange={(event) =>
               updateOptions({
                 ...options,
-                watchStatus: event.currentTarget
-                  .value as DashboardProductWatchStatus,
+                watchStatus: watchStatus(event.currentTarget.value),
                 page: 1,
               })
             }
@@ -305,8 +317,8 @@ function ProductsPage({
           <select
             value={
               options.sort
-                ? `${options.sort.field}.${options.sort.direction}`
-                : "lastSeenAt.desc"
+                ? productSortParam(options.sort)
+                : productSortParam(DEFAULT_PRODUCT_SORT)
             }
             onChange={(event) =>
               updateOptions({
@@ -776,17 +788,16 @@ function parseProductListOptions(): DashboardProductListOptions {
     search: optionalParam(searchParams.get("search")),
     availabilityStates: searchParams
       .getAll("availability")
-      .flatMap((value) => value.split(","))
-      .filter((value): value is BuyableState =>
-        AVAILABILITY_STATES.includes(value as BuyableState),
-      ),
+      .flatMap((value) => selectedAvailabilityStates(value)),
     watchStatus: watchStatus(searchParams.get("watchStatus")) ?? "active",
     collection: optionalParam(searchParams.get("collection")),
     notificationRelevant:
       searchParams.get("notificationRelevant") === "true" ? true : undefined,
     sort: productSort(searchParams.get("sort")),
     page: positiveInteger(searchParams.get("page")) ?? 1,
-    pageSize: positiveInteger(searchParams.get("pageSize")) ?? 50,
+    pageSize:
+      positiveInteger(searchParams.get("pageSize")) ??
+      DEFAULT_PRODUCT_PAGE_SIZE,
   };
 }
 
@@ -811,7 +822,7 @@ function productListSearchParams(
     searchParams.set("notificationRelevant", "true");
   }
   if (options.sort) {
-    searchParams.set("sort", `${options.sort.field}.${options.sort.direction}`);
+    searchParams.set("sort", productSortParam(options.sort));
   }
   if (options.page) {
     searchParams.set("page", String(options.page));
@@ -836,24 +847,30 @@ function positiveInteger(value: string | null): number | undefined {
 function watchStatus(
   value: string | null,
 ): DashboardProductWatchStatus | undefined {
-  if (value === "active" || value === "retired" || value === "all") {
-    return value;
+  for (const status of DASHBOARD_PRODUCT_WATCH_STATUSES) {
+    if (value === status) {
+      return status;
+    }
   }
 
   return undefined;
 }
 
+function selectedAvailabilityStates(value: string): BuyableState[] {
+  return value.split(",").flatMap((state) => {
+    const parsed = availabilityState(state);
+    return parsed ? [parsed] : [];
+  });
+}
+
+function availabilityState(value: string): BuyableState | undefined {
+  return BUYABLE_STATES.find((state) => state === value);
+}
+
 function productSort(value: string | null): DashboardProductSort | undefined {
   const [field, direction] = value?.split(".") ?? [];
 
-  if (
-    field !== "name" &&
-    field !== "collection" &&
-    field !== "price" &&
-    field !== "availabilityState" &&
-    field !== "lastSeenAt" &&
-    field !== "firstSeenAt"
-  ) {
+  if (!isProductSortField(field)) {
     return undefined;
   }
 
@@ -861,6 +878,16 @@ function productSort(value: string | null): DashboardProductSort | undefined {
     field,
     direction: direction === "asc" ? "asc" : "desc",
   };
+}
+
+function productSortParam(sort: DashboardProductSort): string {
+  return `${sort.field}.${sort.direction}`;
+}
+
+function isProductSortField(
+  value: string | undefined,
+): value is DashboardProductSortField {
+  return DASHBOARD_PRODUCT_SORT_FIELDS.some((field) => field === value);
 }
 
 function ProductIdentity({ product }: { product: DashboardProductRow }) {

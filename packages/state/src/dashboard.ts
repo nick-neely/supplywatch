@@ -56,12 +56,27 @@ export type DashboardProductSortField =
   | "lastSeenAt"
   | "firstSeenAt";
 
+export const DASHBOARD_PRODUCT_SORT_FIELDS = [
+  "name",
+  "collection",
+  "price",
+  "availabilityState",
+  "lastSeenAt",
+  "firstSeenAt",
+] as const satisfies readonly DashboardProductSortField[];
+
 export type DashboardProductSort = {
   field: DashboardProductSortField;
   direction: "asc" | "desc";
 };
 
 export type DashboardProductWatchStatus = "active" | "retired" | "all";
+
+export const DASHBOARD_PRODUCT_WATCH_STATUSES = [
+  "active",
+  "retired",
+  "all",
+] as const satisfies readonly DashboardProductWatchStatus[];
 
 export type DashboardProductListOptions = {
   search?: string;

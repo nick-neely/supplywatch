@@ -9,6 +9,8 @@ import { extname, isAbsolute, join, normalize, sep } from "node:path";
 import {
   BUYABLE_STATES,
   type BuyableState,
+  DASHBOARD_PRODUCT_SORT_FIELDS,
+  DASHBOARD_PRODUCT_WATCH_STATUSES,
   type DashboardProductSort,
   type DashboardProductSortField,
   type DashboardProductWatchStatus,
@@ -160,17 +162,27 @@ function optionalParam(value: string | null): string | undefined {
 function availabilityStates(searchParams: URLSearchParams): BuyableState[] {
   return searchParams
     .getAll("availability")
-    .flatMap((value) => value.split(","))
-    .filter((value): value is BuyableState =>
-      BUYABLE_STATES.includes(value as BuyableState),
-    );
+    .flatMap((value) => selectedAvailabilityStates(value));
+}
+
+function selectedAvailabilityStates(value: string): BuyableState[] {
+  return value.split(",").flatMap((state) => {
+    const parsed = availabilityState(state);
+    return parsed ? [parsed] : [];
+  });
+}
+
+function availabilityState(value: string): BuyableState | undefined {
+  return BUYABLE_STATES.find((state) => state === value);
 }
 
 function watchStatus(
   value: string | null,
 ): DashboardProductWatchStatus | undefined {
-  if (value === "active" || value === "retired" || value === "all") {
-    return value;
+  for (const status of DASHBOARD_PRODUCT_WATCH_STATUSES) {
+    if (value === status) {
+      return status;
+    }
   }
 
   return undefined;
@@ -192,14 +204,7 @@ function productSort(value: string | null): DashboardProductSort | undefined {
 function isProductSortField(
   value: string | undefined,
 ): value is DashboardProductSortField {
-  return (
-    value === "name" ||
-    value === "collection" ||
-    value === "price" ||
-    value === "availabilityState" ||
-    value === "lastSeenAt" ||
-    value === "firstSeenAt"
-  );
+  return DASHBOARD_PRODUCT_SORT_FIELDS.some((field) => field === value);
 }
 
 function positiveInteger(value: string | null): number | undefined {
