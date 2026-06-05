@@ -14,7 +14,7 @@
     "build": "pnpm --filter @supplywatch/state build && tsc -p tsconfig.json",
     "watcher:build": "pnpm build",
     "start": "node dist/worker.js",
-    "typecheck": "pnpm --filter @supplywatch/state typecheck && tsc -p tsconfig.json --noEmit",
+    "typecheck": "pnpm --filter @supplywatch/state build && tsc -p tsconfig.json --noEmit",
     "watcher:typecheck": "pnpm typecheck",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
